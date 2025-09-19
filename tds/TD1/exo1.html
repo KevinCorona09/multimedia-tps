@@ -4,13 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>TD1 – Exercice 1 : Géolocalisation</title>
-
   <!-- Reutilizamos tu CSS/JS globales -->
   <link rel="stylesheet" href="../../css/styles.css" />
   <script defer src="../../js/script.js"></script>
-
   <style>
-    /* Un poco de estilo local para la tabla/estado */
     .wrap{width:min(980px,92vw);margin:40px auto}
     .back{display:inline-block;margin-bottom:14px}
     .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
@@ -47,10 +44,10 @@
       <!-- Suivi continu -->
       <section class="panel">
         <h3>Suivi continu (<code>watchPosition</code>)</h3>
-        <div id="watchStatus" class="muted">Inactif</div>
+        <div id="watchStatus" class="muted">Démarré…</div>
         <dl class="kv mono" id="watchOut"></dl>
         <div class="controls">
-          <button class="btn primary" id="btnStart">Démarrer le suivi</button>
+          <button class="btn err" id="btnToggleWatch">Arrêter le suivi</button>
         </div>
       </section>
     </div>
@@ -69,11 +66,11 @@ const onceOut = document.getElementById('onceOut');
 const watchStatus = document.getElementById('watchStatus');
 const watchOut = document.getElementById('watchOut');
 const btnOnce = document.getElementById('btnOnce');
-const btnStart = document.getElementById('btnStart');
+const btnToggleWatch = document.getElementById('btnToggleWatch');
 
 let watchId = null;
 let lastPosition = null;
-let minDelta = 0.00005; // Lat/Lon, aprox equivale a ~5m, ajusta a precisión esperada
+let minDelta = 0.00005; // Lat/Lon ~5m de umbral, ajústalo si lo necesitas
 
 function fmt(n, d=6){ return (n==null || Number.isNaN(n)) ? 'n/a' : Number(n).toFixed(d); }
 function fmtDate(ts){ return new Date(ts).toLocaleString(); }
@@ -110,6 +107,7 @@ function options(){
     maximumAge: 0
   };
 }
+
 // --- getCurrentPosition (une seule mesure)
 function doOnce(){
   onceStatus.textContent = "Mesure en cours…";
@@ -125,12 +123,12 @@ function doOnce(){
     options()
   );
 }
+
 // --- watchPosition (suivi continu)
 function positionChanged(newPos){
   if (!lastPosition) return true;
   const c = newPos.coords;
   const l = lastPosition.coords;
-  // Solo actualiza si variaciones reales
   if (Math.abs(c.latitude - l.latitude) > minDelta) return true;
   if (Math.abs(c.longitude - l.longitude) > minDelta) return true;
   if (c.accuracy !== l.accuracy) return true;
@@ -139,9 +137,9 @@ function positionChanged(newPos){
 function startWatch(){
   if (watchId !== null) return;
   watchStatus.textContent = "Démarré…";
-  btnStart.textContent = "Arrêter le suivi";
-  btnStart.classList.remove("primary");
-  btnStart.classList.add("err");
+  btnToggleWatch.textContent = "Arrêter le suivi";
+  btnToggleWatch.classList.remove("primary");
+  btnToggleWatch.classList.add("err");
   watchId = navigator.geolocation.watchPosition(
     (pos)=>{
       if (positionChanged(pos)){
@@ -159,23 +157,26 @@ function startWatch(){
 function stopWatch(){
   if (watchId !== null){
     navigator.geolocation.clearWatch(watchId);
-    watchId = null; lastPosition = null;
+    watchId = null;
+    lastPosition = null;
     watchStatus.textContent = "Inactif";
-    btnStart.textContent = "Démarrer le suivi";
-    btnStart.classList.add("primary");
-    btnStart.classList.remove("err");
+    btnToggleWatch.textContent = "Démarrer le suivi";
+    btnToggleWatch.classList.add("primary");
+    btnToggleWatch.classList.remove("err");
   }
 }
+
 // --- Wire UI
 btnOnce.addEventListener('click', doOnce);
-btnStart.addEventListener('click', ()=>{
+btnToggleWatch.addEventListener('click', ()=>{
   if(watchId === null){
     startWatch();
   }else{
     stopWatch();
   }
 });
-// --- Auto-demarrage
+
+// --- Auto-demarrage suivi continu
 if ("geolocation" in navigator){
   doOnce();
   startWatch();
