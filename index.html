@@ -1,11 +1,98 @@
 <!doctype html>
-<html>
+<html lang="fr">
 <head>
-  <meta charset="utf-8">
-  <title>TP Multimedia</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Initiation au Multimédia – Travaux Pratiques</title>
+  <meta name="description" content="Page d’accueil pour accéder rapidement aux TP de l’UE Initiation au Multimédia." />
+  <link rel="stylesheet" href="css/styles.css" />
+  <script defer src="js/script.js"></script>
 </head>
 <body>
-  <h1>Hola, esta es mi página de TPs 🎉</h1>
-  <p>Pronto enlazaré los ejercicios aquí.</p>
+  <!-- Décor animé -->
+  <div class="bg-gradient" aria-hidden="true"></div>
+  <div class="blob blob-a" aria-hidden="true"></div>
+  <div class="blob blob-b" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <a class="brand" href="#" aria-label="Accueil">
+      <span class="brand-logo">✦</span>
+      <span class="brand-text">Initiation au Multimédia</span>
+    </a>
+
+    <nav class="site-nav" aria-label="Navigation principale">
+      <a href="#tps" class="nav-link">TP</a>
+      <a href="#apropos" class="nav-link">À propos</a>
+      <button id="themeToggle" class="btn ghost" aria-label="Changer de thème">🌗</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Hero -->
+    <section class="hero reveal" id="accueil">
+      <h1 class="title">Bienvenue sur mes <span class="accent">Travaux Pratiques</span></h1>
+      <p class="subtitle">
+        Retrouvez ici tous les exercices réalisés pendant le cours. Cette page est
+        responsive, accessible et agrémentée de petites animations pour une touche personnelle.
+      </p>
+      <div class="cta">
+        <a class="btn primary" href="#tps">Voir les TP</a>
+        <a class="btn" href="https://kevincorona09.github.io/my-portfolio/" target="_blank" rel="noopener">Mon site principal</a>
+      </div>
+    </section>
+
+    <!-- Travaux Pratiques -->
+    <section class="tps reveal" id="tps" aria-labelledby="tps-title">
+      <h2 id="tps-title">Liste des TP</h2>
+
+      <div class="grid">
+        <!-- TD1 / Exercice 1 -->
+        <article class="card hover-raise">
+          <div class="card-head">
+            <div class="badge">TD1</div>
+            <h3>Exercice 1 — Géolocalisation</h3>
+          </div>
+          <p class="card-text">
+            Utilisation de <code>getCurrentPosition</code> et <code>watchPosition</code> pour récupérer
+            la position de l’utilisateur et afficher les données en temps réel.
+          </p>
+          <a class="btn link" href="tds/TD1/exo1.html">Ouvrir l’exercice</a>
+        </article>
+
+        <!-- Emplacements pour futurs TP -->
+        <article class="card hover-raise disabled">
+          <div class="card-head">
+            <div class="badge">TD1</div>
+            <h3>Exercice 2 — Leaflet (bientôt)</h3>
+          </div>
+          <p class="card-text">Carte OSM, marqueurs et polygones. À venir…</p>
+          <button class="btn link" disabled>En préparation</button>
+        </article>
+
+        <article class="card hover-raise disabled">
+          <div class="card-head">
+            <div class="badge">TD1</div>
+            <h3>Exercice 3 — Leaflet Plus (bientôt)</h3>
+          </div>
+          <p class="card-text">Couches alternatives, précision et GeoJSON. À venir…</p>
+          <button class="btn link" disabled>En préparation</button>
+        </article>
+      </div>
+    </section>
+
+    <!-- À propos -->
+    <section class="apropos reveal" id="apropos" aria-labelledby="apropos-title">
+      <h2 id="apropos-title">À propos</h2>
+      <p>
+        Cette page est publiée via <strong>GitHub Pages</strong> et versionnée avec <strong>Git</strong>.
+        Le design utilise des dégradés animés, des cartes « glassmorphism » et une mise en page
+        en grille pour une lecture confortable.
+      </p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>© <span id="year"></span> KevinCorona09 — <a href="https://github.com/KevinCorona09/multimedia-tps" target="_blank" rel="noopener">Voir le dépôt</a></p>
+  </footer>
 </body>
 </html>
