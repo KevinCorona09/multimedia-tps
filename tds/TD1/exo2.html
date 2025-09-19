@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TD1 – Exercice 2 : Leaflet + Géolocalisation</title>
+
+  <!-- CSS global -->
+  <link rel="stylesheet" href="../../css/styles.css" />
+  <script defer src="../../js/script.js"></script>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    .wrap{width:min(1000px,95vw);margin:20px auto}
+    #map{height:70vh;border-radius:12px;border:1px solid var(--border)}
+    .back{display:inline-block;margin:14px 0}
+  </style>
+</head>
+<body>
+  <div class="bg-gradient" aria-hidden="true"></div>
+
+  <div class="wrap">
+    <a class="back btn link" href="../../index.html">← Retour à l’index</a>
+    <h1>Exercice 2 — Leaflet et Géolocalisation</h1>
+    <p class="muted">Carte OpenStreetMap centrée sur votre position, avec marqueurs et polygone.</p>
+
+    <div id="map"></div>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // Initialiser la carte 
+    const niceCentre = [43.7000, 7.2667];
+    const map = L.map('map').setView(niceCentre, 12);
+
+    // Couche OpenStreetMap
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>'
+    }).addTo(map);
+
+    // Marqueur sur Nice
+    L.marker(niceCentre).addTo(map).bindPopup('Nice — Centre ville');
+
+    // Triangle des Bermudes 
+    const bermudes = [
+      [25.774, -80.190],   // Miami
+      [18.466, -66.118],   // Puerto Rico
+      [32.321, -64.757]    // Bermuda
+    ];
+    L.polygon(bermudes, {color:'red'}).addTo(map).bindPopup('Triangle des Bermudes');
+
+    if ("geolocation" in navigator){
+      navigator.geolocation.getCurrentPosition((pos)=>{
+        const me = [pos.coords.latitude, pos.coords.longitude];
+        map.setView(me, 15);
+        L.marker(me).addTo(map).bindPopup('Ma position').openPopup();
+      },
+      (err)=>{
+        console.warn("Erreur géolocalisation:", err.message);
+      },
+      {enableHighAccuracy:true, timeout:10000});
+    }else{
+      alert("La géolocalisation n’est pas supportée par ce navigateur.");
+    }
+  </script>
+</body>
+</html>

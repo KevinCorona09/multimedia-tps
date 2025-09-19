@@ -69,8 +69,6 @@ const btnOnce = document.getElementById('btnOnce');
 const btnToggleWatch = document.getElementById('btnToggleWatch');
 
 let watchId = null;
-let lastPosition = null;
-let minDelta = 0.00005; // Lat/Lon ~5m de umbral, ajústalo si lo necesitas
 
 function fmt(n, d=6){ return (n==null || Number.isNaN(n)) ? 'n/a' : Number(n).toFixed(d); }
 function fmtDate(ts){ return new Date(ts).toLocaleString(); }
@@ -103,7 +101,7 @@ function explainError(err){
 function options(){
   return {
     enableHighAccuracy: true,
-    timeout: 10000,
+    timeout: 5000,
     maximumAge: 0
   };
 }
@@ -124,16 +122,7 @@ function doOnce(){
   );
 }
 
-// --- watchPosition (suivi continu)
-function positionChanged(newPos){
-  if (!lastPosition) return true;
-  const c = newPos.coords;
-  const l = lastPosition.coords;
-  if (Math.abs(c.latitude - l.latitude) > minDelta) return true;
-  if (Math.abs(c.longitude - l.longitude) > minDelta) return true;
-  if (c.accuracy !== l.accuracy) return true;
-  return false;
-}
+// --- watchPosition (suivi continu en tiempo real)
 function startWatch(){
   if (watchId !== null) return;
   watchStatus.textContent = "Démarré…";
@@ -142,11 +131,8 @@ function startWatch(){
   btnToggleWatch.classList.add("err");
   watchId = navigator.geolocation.watchPosition(
     (pos)=>{
-      if (positionChanged(pos)){
-        watchStatus.innerHTML = '<span class="ok">OK</span>';
-        watchOut.innerHTML = rowsFromPosition(pos);
-        lastPosition = pos;
-      }
+      watchStatus.innerHTML = '<span class="ok">OK</span>';
+      watchOut.innerHTML = rowsFromPosition(pos);
     },
     (err)=>{
       watchStatus.innerHTML = '<span class="err">Erreur</span> ' + explainError(err);
@@ -154,11 +140,11 @@ function startWatch(){
     options()
   );
 }
+
 function stopWatch(){
   if (watchId !== null){
     navigator.geolocation.clearWatch(watchId);
     watchId = null;
-    lastPosition = null;
     watchStatus.textContent = "Inactif";
     btnToggleWatch.textContent = "Démarrer le suivi";
     btnToggleWatch.classList.add("primary");
@@ -176,7 +162,7 @@ btnToggleWatch.addEventListener('click', ()=>{
   }
 });
 
-// --- Auto-demarrage suivi continu
+// --- Auto-demarrage suivi continu con datos dinámicos en tiempo real
 if ("geolocation" in navigator){
   doOnce();
   startWatch();
