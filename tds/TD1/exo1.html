@@ -26,7 +26,6 @@
 </head>
 <body>
   <div class="bg-gradient" aria-hidden="true"></div>
-
   <div class="wrap">
     <a class="back btn link" href="../../index.html">← Retour à l’index</a>
     <h1>Exercice 1 — Accès à la Géolocalisation</h1>
@@ -35,7 +34,6 @@
       et <strong>date</strong> (depuis le timestamp) en utilisant
       <code>getCurrentPosition</code> et <code>watchPosition</code>.
     </p>
-
     <div class="grid">
       <!-- Lecture unique -->
       <section class="panel">
@@ -46,7 +44,6 @@
           <button class="btn" id="btnOnce">Reprendre la mesure</button>
         </div>
       </section>
-
       <!-- Suivi continu -->
       <section class="panel">
         <h3>Suivi continu (<code>watchPosition</code>)</h3>
@@ -54,14 +51,9 @@
         <dl class="kv mono" id="watchOut"></dl>
         <div class="controls">
           <button class="btn primary" id="btnStart">Démarrer le suivi</button>
-          <button class="btn" id="btnStop" disabled>Arrêter</button>
-          <label class="muted" style="display:flex;align-items:center;gap:6px">
-            <input type="checkbox" id="optHigh" checked> Haute précision
-          </label>
         </div>
       </section>
     </div>
-
     <details style="margin-top:14px">
       <summary>Notes utiles</summary>
       <ul>
@@ -71,118 +63,125 @@
       </ul>
     </details>
   </div>
+<script>
+const onceStatus = document.getElementById('onceStatus');
+const onceOut = document.getElementById('onceOut');
+const watchStatus = document.getElementById('watchStatus');
+const watchOut = document.getElementById('watchOut');
+const btnOnce = document.getElementById('btnOnce');
+const btnStart = document.getElementById('btnStart');
 
-  <script>
-    const onceStatus = document.getElementById('onceStatus');
-    const onceOut = document.getElementById('onceOut');
-    const watchStatus = document.getElementById('watchStatus');
-    const watchOut = document.getElementById('watchOut');
+let watchId = null;
+let lastPosition = null;
+let minDelta = 0.00005; // Lat/Lon, aprox equivale a ~5m, ajusta a precisión esperada
 
-    const btnOnce = document.getElementById('btnOnce');
-    const btnStart = document.getElementById('btnStart');
-    const btnStop  = document.getElementById('btnStop');
-    const optHigh  = document.getElementById('optHigh');
-
-    let watchId = null;
-
-    function fmt(n, d=6){ return (n==null || Number.isNaN(n)) ? 'n/a' : Number(n).toFixed(d); }
-    function fmtDate(ts){ return new Date(ts).toLocaleString(); }
-    
-    function kmh(speed){
-        if (speed == null) return 'n/a';
-        if (speed < 1) return '0 (statique)';
-        return (speed*3.6).toFixed(1) + ' km/h';
-    }
-
-
-    function rowsFromPosition(pos){
-      const c = pos.coords;
-      return `
-        <dt>Latitude</dt><dd>${fmt(c.latitude)}</dd>
-        <dt>Longitude</dt><dd>${fmt(c.longitude)}</dd>
-        <dt>Altitude</dt><dd>${c.altitude ?? 'n/a'}</dd>
-        <dt>Précision (m)</dt><dd>${c.accuracy ?? 'n/a'}</dd>
-        <dt>Précision Alt (m)</dt><dd>${c.altitudeAccuracy ?? 'n/a'}</dd>
-        <dt>Vitesse</dt><dd>${c.speed ?? 'n/a'} m/s (${kmh(c.speed)} km/h)</dd>
-        <dt>Cap</dt><dd>${c.heading ?? 'n/a'}</dd>
-        <dt>Date</dt><dd>${fmtDate(pos.timestamp)}</dd>
-      `;
-    }
-
-    function explainError(err){
-      const map = {
-        1: "Permission refusée",
-        2: "Position indisponible",
-        3: "Délai dépassé"
-      };
-      return map[err.code] || (err.message || "Erreur inconnue");
-    }
-
-    function options(){
-      return {
-        enableHighAccuracy: optHigh.checked,
-        timeout: 10000,
-        maximumAge: 0
-      };
-    }
-
-    // ---- getCurrentPosition (une seule mesure)
-    function doOnce(){
-      onceStatus.textContent = "Mesure en cours…";
-      navigator.geolocation.getCurrentPosition(
-        (pos)=>{
-          onceStatus.innerHTML = '<span class="ok">OK</span>';
-          onceOut.innerHTML = rowsFromPosition(pos);
-        },
-        (err)=>{
-          onceStatus.innerHTML = '<span class="err">Erreur</span> ' + explainError(err);
-          onceOut.innerHTML = '';
-        },
-        options()
-      );
-    }
-
-    // ---- watchPosition (suivi continu)
-    function startWatch(){
-      if (watchId !== null) return;
-      watchStatus.textContent = "Démarré…";
-      btnStart.disabled = true; btnStop.disabled = false;
-
-      watchId = navigator.geolocation.watchPosition(
-        (pos)=>{
-          watchStatus.innerHTML = '<span class="ok">OK</span>';
-          watchOut.innerHTML = rowsFromPosition(pos);
-        },
-        (err)=>{
-          watchStatus.innerHTML = '<span class="err">Erreur</span> ' + explainError(err);
-        },
-        options()
-      );
-    }
-    function stopWatch(){
-      if (watchId !== null){
-        navigator.geolocation.clearWatch(watchId);
-        watchId = null;
-        watchStatus.textContent = "Inactif";
-        btnStart.disabled = false; btnStop.disabled = true;
+function fmt(n, d=6){ return (n==null || Number.isNaN(n)) ? 'n/a' : Number(n).toFixed(d); }
+function fmtDate(ts){ return new Date(ts).toLocaleString(); }
+function kmh(speed){
+  if (speed == null) return 'n/a';
+  if (speed < 0.5) return '0 (statique)';
+  return (speed*3.6).toFixed(1) + ' km/h';
+}
+function rowsFromPosition(pos){
+  const c = pos.coords;
+  return `
+    <dt>Latitude</dt><dd>${fmt(c.latitude)}</dd>
+    <dt>Longitude</dt><dd>${fmt(c.longitude)}</dd>
+    <dt>Altitude</dt><dd>${c.altitude ?? 'n/a'}</dd>
+    <dt>Précision (m)</dt><dd>${c.accuracy ?? 'n/a'}</dd>
+    <dt>Précision Alt (m)</dt><dd>${c.altitudeAccuracy ?? 'n/a'}</dd>
+    <dt>Vitesse</dt><dd>${c.speed ?? 'n/a'} m/s (${kmh(c.speed)})</dd>
+    <dt>Cap</dt><dd>${c.heading ?? 'n/a'}</dd>
+    <dt>Date</dt><dd>${fmtDate(pos.timestamp)}</dd>
+  `;
+}
+function explainError(err){
+  const map = {
+    1: "Permission refusée",
+    2: "Position indisponible",
+    3: "Délai dépassé"
+  };
+  return map[err.code] || (err.message || "Erreur inconnue");
+}
+function options(){
+  return {
+    enableHighAccuracy: true,
+    timeout: 10000,
+    maximumAge: 0
+  };
+}
+// --- getCurrentPosition (une seule mesure)
+function doOnce(){
+  onceStatus.textContent = "Mesure en cours…";
+  navigator.geolocation.getCurrentPosition(
+    (pos)=>{
+      onceStatus.innerHTML = '<span class="ok">OK</span>';
+      onceOut.innerHTML = rowsFromPosition(pos);
+    },
+    (err)=>{
+      onceStatus.innerHTML = '<span class="err">Erreur</span> ' + explainError(err);
+      onceOut.innerHTML = '';
+    },
+    options()
+  );
+}
+// --- watchPosition (suivi continu)
+function positionChanged(newPos){
+  if (!lastPosition) return true;
+  const c = newPos.coords;
+  const l = lastPosition.coords;
+  // Solo actualiza si variaciones reales
+  if (Math.abs(c.latitude - l.latitude) > minDelta) return true;
+  if (Math.abs(c.longitude - l.longitude) > minDelta) return true;
+  if (c.accuracy !== l.accuracy) return true;
+  return false;
+}
+function startWatch(){
+  if (watchId !== null) return;
+  watchStatus.textContent = "Démarré…";
+  btnStart.textContent = "Arrêter le suivi";
+  btnStart.classList.remove("primary");
+  btnStart.classList.add("err");
+  watchId = navigator.geolocation.watchPosition(
+    (pos)=>{
+      if (positionChanged(pos)){
+        watchStatus.innerHTML = '<span class="ok">OK</span>';
+        watchOut.innerHTML = rowsFromPosition(pos);
+        lastPosition = pos;
       }
-    }
-
-    // ---- Wire UI
-    btnOnce.addEventListener('click', doOnce);
-    btnStart.addEventListener('click', startWatch);
-    btnStop.addEventListener('click', stopWatch);
-    optHigh.addEventListener('change', ()=>{
-      if (watchId !== null){ stopWatch(); startWatch(); }
-    });
-
-    // Auto-demarrage : 1 lecture + suivi
-    if ("geolocation" in navigator){
-      doOnce();      // première lecture
-      startWatch();  // suivi
-    }else{
-      onceStatus.textContent = watchStatus.textContent = "La géolocalisation n’est pas supportée par ce navigateur.";
-    }
-  </script>
+    },
+    (err)=>{
+      watchStatus.innerHTML = '<span class="err">Erreur</span> ' + explainError(err);
+    },
+    options()
+  );
+}
+function stopWatch(){
+  if (watchId !== null){
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null; lastPosition = null;
+    watchStatus.textContent = "Inactif";
+    btnStart.textContent = "Démarrer le suivi";
+    btnStart.classList.add("primary");
+    btnStart.classList.remove("err");
+  }
+}
+// --- Wire UI
+btnOnce.addEventListener('click', doOnce);
+btnStart.addEventListener('click', ()=>{
+  if(watchId === null){
+    startWatch();
+  }else{
+    stopWatch();
+  }
+});
+// --- Auto-demarrage
+if ("geolocation" in navigator){
+  doOnce();
+  startWatch();
+}else{
+  onceStatus.textContent = watchStatus.textContent = "La géolocalisation n’est pas supportée par ce navigateur.";
+}
+</script>
 </body>
 </html>
