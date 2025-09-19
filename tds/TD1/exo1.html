@@ -87,7 +87,13 @@
 
     function fmt(n, d=6){ return (n==null || Number.isNaN(n)) ? 'n/a' : Number(n).toFixed(d); }
     function fmtDate(ts){ return new Date(ts).toLocaleString(); }
-    function kmh(speed){ return (speed==null) ? 'n/a' : (speed*3.6).toFixed(1); }
+    
+    function kmh(speed){
+        if (speed == null) return 'n/a';
+        if (speed < 1) return '0 (statique)';
+        return (speed*3.6).toFixed(1) + ' km/h';
+    }
+
 
     function rowsFromPosition(pos){
       const c = pos.coords;
