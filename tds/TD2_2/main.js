@@ -1,4 +1,3 @@
-// --- Canvas y Engine ---
 const canvas = document.getElementById("renderCanvas");
 const engine = new BABYLON.Engine(canvas, true, { stencil: true, preserveDrawingBuffer: true });
 engine.displayLoadingUI();
@@ -19,17 +18,14 @@ function normalizeUnderPivot(importResult, scene, {
   const pivot = new BABYLON.TransformNode(`${importResult.meshes[0].name}_pivot`, scene);
   importResult.meshes.forEach(m => m.setParent(pivot));
 
-  // centrar en origen
   const { center } = getBounds(pivot);
   pivot.getChildMeshes().forEach(m => m.position.subtractInPlace(center));
 
-  // escalar a tamaño objetivo
   const bounds = getBounds(pivot);
   const largest = Math.max(bounds.size.x, bounds.size.y, bounds.size.z);
   const scale = targetSize / (largest || 1);
   pivot.scaling = new BABYLON.Vector3(scale, scale, scale);
 
-  // apoyar en suelo si se pide
   if (groundAlign) {
     const { min: minAfter } = getBounds(pivot);
     pivot.position.y -= minAfter.y;
@@ -107,7 +103,6 @@ function createLowPolyOcean(scene, {
   normalTex.uScale = normalTex.vScale = 12;
 
   const pbr = new BABYLON.PBRMaterial("waterPBR", scene);
-  // Quita cualquier albedoTexture que hubiera y usa un color azul
   pbr.albedoTexture = null;
   pbr.albedoColor = new BABYLON.Color3(0.10, 0.45, 0.85); // azul agua
   pbr.bumpTexture = normalTex;
@@ -207,12 +202,11 @@ const createScene = async () => {
   // ClearColor base
   scene.clearColor = new BABYLON.Color4(0.02, 0.03, 0.06, 1);
 
-  // IBL (sin skybox por defecto)
+  // IBL 
   scene.environmentTexture = BABYLON.CubeTexture.CreateFromPrefilteredData(
     "https://assets.babylonjs.com/environments/environmentSpecular.env",
     scene
   );
-  // Extra (opcional): agua más “profunda”
   scene.imageProcessingConfiguration.exposure = 1.0;  // << pedido
   scene.imageProcessingConfiguration.contrast = 1.05;
   scene.environmentIntensity = 1.0;
@@ -350,7 +344,6 @@ const cloudBands = [
   { base: cloudLayers[2], zMul: -4.2, yFactor: 0.68, yShift: -0.08, tiles: [-2.5, 0.0, 2.5],             scale: 3200 },
   { base: cloudLayers[3], zMul: -3.6, yFactor: 0.58, yShift: -0.10, tiles: [-2.0, 2.0],                  scale: 2800 },
   { base: cloudLayers[4], zMul: -3.0, yFactor: 0.48, yShift: -0.10, tiles: [-1.5, 0.0, 1.5],             scale: 2400 },
-  // bandas bajas nuevas (cubren desde más abajo)
   { base: cloudLayers[5], zMul: -2.6, yFactor: 0.36, yShift: -0.18, tiles: [-2.2, -0.7, 0.7, 2.2],       scale: 2600 },
   { base: cloudLayers[6], zMul: -2.2, yFactor: 0.28, yShift: -0.22, tiles: [-1.8, 0.0, 1.8],             scale: 2200 }
 ];
@@ -434,7 +427,6 @@ for (const band of cloudBands) {
     amplitude: 20,
     choppiness: 0.9
   });
-  // Para flotar algo: window.oceanAddFloater(islands[2].pivot, 80);
 
   /* ======= Animaciones y cielo ======= */
   let t = 0;
