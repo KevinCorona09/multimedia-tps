@@ -93,7 +93,7 @@ let dragonBaseHalfHeight = 0;
 let currentObject = box;
 
 const STL_RELEASE_URL = 'https://github.com/KevinCorona09/multimedia-tps/releases/download/assets-td2/model.stl';
-const STL_LOCAL_URL   = 'assets/model_simplified.stl';
+const STL_LOCAL_URL = 'assets/model_simplified.stl';
 
 const stlLoader = new STLLoader();
 
@@ -127,19 +127,10 @@ function setupDragon(geometry) {
 
 // 1º intento: Release (funciona en GitHub Pages)
 stlLoader.load(
-  STL_RELEASE_URL,
-  (geom) => setupDragon(geom),
+  STL_LOCAL_URL,
+  (geom) => setupDragon(geom),  
   undefined,
-  (err) => {
-    console.warn('Fallo al cargar desde Release, probando local…', err);
-    // 2º intento: local (para tu entorno de desarrollo)
-    stlLoader.load(
-      STL_LOCAL_URL,
-      (geom) => setupDragon(geom),
-      undefined,
-      (e2) => console.error('Error cargando STL (local):', e2)
-    );
-  }
+  (err) => console.error('Error cargando STL:', err)
 );
 
 
