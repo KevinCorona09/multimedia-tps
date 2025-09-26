@@ -92,8 +92,12 @@ let stlMesh = null;
 let dragonBaseHalfHeight = 0; 
 let currentObject = box;
 
+const STL_RELEASE_URL = 'https://github.com/KevinCorona09/multimedia-tps/releases/download/assets-td2/model.stl';
+const STL_LOCAL_URL   = 'assets/model_simplified.stl';
+
 const stlLoader = new STLLoader();
-stlLoader.load('assets/model.stl', (geometry) => {
+
+function setupDragon(geometry) {
   if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
   geometry.center();
 
@@ -102,7 +106,7 @@ stlLoader.load('assets/model.stl', (geometry) => {
   const size = new THREE.Vector3().subVectors(bb.max, bb.min);
   const maxDim = Math.max(size.x, size.y, size.z) || 1;
 
-  const targetSize = 3.0;          
+  const targetSize = 3.0;
   const baseScale = targetSize / maxDim;
   geometry.scale(baseScale, baseScale, baseScale);
 
@@ -119,7 +123,25 @@ stlLoader.load('assets/model.stl', (geometry) => {
   stlMesh.castShadow = true;
   stlMesh.visible = false;
   scene.add(stlMesh);
-});
+}
+
+// 1º intento: Release (funciona en GitHub Pages)
+stlLoader.load(
+  STL_RELEASE_URL,
+  (geom) => setupDragon(geom),
+  undefined,
+  (err) => {
+    console.warn('Fallo al cargar desde Release, probando local…', err);
+    // 2º intento: local (para tu entorno de desarrollo)
+    stlLoader.load(
+      STL_LOCAL_URL,
+      (geom) => setupDragon(geom),
+      undefined,
+      (e2) => console.error('Error cargando STL (local):', e2)
+    );
+  }
+);
+
 
 // ===== Lluvia (partículas) + toggle =====
 const rainCount = 800;
@@ -139,7 +161,7 @@ scene.add(rain);
 document.getElementById('toggleRain').addEventListener('click', (e) => {
   rainEnabled = !rainEnabled;
   rain.visible = rainEnabled;
-  e.currentTarget.textContent = `Lluvia: ${rainEnabled ? 'ON' : 'OFF'}`;
+  e.currentTarget.textContent = `Pluie: ${rainEnabled ? 'ON' : 'OFF'}`;
 });
 
 // ===== Botones: cubo - dragón =====
