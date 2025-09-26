@@ -16,3 +16,10 @@ body { overflow: hidden; background: #202533; }
 #controls button:hover { background: #0b1220; }
 #controls input[type="range"] { width: 160px; margin: 0 6px; vertical-align: middle; }
 #dragonScaleVal { min-width: 40px; display: inline-block; text-align: right; }
+
+.note {
+  font-size: 0.8rem;
+  color: #ccc;
+  margin-top: 4px;
+  font-style: italic;
+}
