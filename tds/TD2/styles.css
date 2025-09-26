@@ -1,0 +1,18 @@
+html, body { height: 100%; margin: 0; }
+body { overflow: hidden; background: #202533; }
+#c { display: block; width: 100vw; height: 100vh; }
+
+#controls {
+  position: fixed; top: 10px; left: 10px; z-index: 100;
+  background: rgba(0,0,0,0.35); backdrop-filter: blur(6px);
+  padding: 8px 10px; border-radius: 10px;
+  color: #e8eef9; font-family: system-ui, sans-serif; font-size: 14px;
+}
+#controls .row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+#controls button {
+  padding: 6px 10px; cursor: pointer; border-radius: 8px; border: 1px solid #4b5563;
+  background: #111827; color: #e5e7eb;
+}
+#controls button:hover { background: #0b1220; }
+#controls input[type="range"] { width: 160px; margin: 0 6px; vertical-align: middle; }
+#dragonScaleVal { min-width: 40px; display: inline-block; text-align: right; }
