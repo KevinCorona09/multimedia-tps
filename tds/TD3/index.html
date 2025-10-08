@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TD3 - Géolocalisation 3D Interactive</title>
+    <link rel="stylesheet" href="css/styles.css">
+    
+    <!-- LEAFLET CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+          crossorigin=""/>
+</head>
+<body>
+    <div id="container">
+        <div id="info">
+            <h1>Géolocalisation 3D Interactive</h1>
+            <p>Position: <span id="position">Attendez...</span></p>
+            <p><small>Cliquez sur un pays pour centrer la carte</small></p>
+            
+            <div id="controls">
+                <button id="lightToggle" class="control-btn active">
+                    Jour/Nuit Automatique
+                </button>
+                
+                <button id="billboardToggle" class="control-btn active">
+                    Suivi Drapeaux Activé
+                </button>
+                
+                <button id="geometryToggle" class="control-btn active">
+                    Mode Sphères 3D
+                </button>
+                
+                <button id="earthRotationToggle" class="control-btn active">
+                    Rotation Auto Activée
+                </button>
+            </div>
+        </div>
+
+        <canvas id="canvas3d"></canvas>
+        
+        <div id="mapContainer" class="map-container">
+            <div id="mapControls" class="map-controls">
+                <button id="mapToggle" class="map-control-btn" title="Minimizar/Expandir">
+                    📐
+                </button>
+                <span class="map-title">🗺️ Carte Interactive</span>
+            </div>
+            
+            <div id="leafletMap"></div>
+            
+            <div id="selectedCountryInfo" class="country-info">
+                <span id="selectedCountryName">Sélectionnez un pays</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <!-- LEAFLET JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+            crossorigin=""></script>
+    
+    <script src="js/script.js"></script>
+</body>
+</html>
