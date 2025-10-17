@@ -1,180 +1,253 @@
-let facemesh;
-let video;
-let predictions = [];
+// ============================================================
+// Escaneo Facial 3D Interactivo (p5.js + ml5.js FaceMesh)
+// Requisitos del PDF + CAMBIO solicitado por el usuario:
+//   - Mostrar VIDEO y MALLA 3D simultáneamente.
+//   - Sin opciones de UI (sin botones/sliders/checkbox).
+//   - La cámara/video se inicia automáticamente al cargar.
+// Extras implementados:
+//   - Iluminación ambiental + direccional rotante.
+//   - Deformación automática por expresión (boca abierta).
+//   - Detección simple de parpadeo (destello de color).
+//   - Manejo básico de errores de cámara y estado en pantalla.
+//   - Triangulación calculada una sola vez con Delaunator.
+// ============================================================
 
-let statusEl, errorEl;
+let faceMesh;              // Modelo de ml5.js
+let video;                 // Flujo de cámara
+let faces = [];            // Predicciones de rostros
+let triIndices = null;     // Índices de triángulos (calculados 1 sola vez)
+let lightAngle = 0;        // Rotación de la luz direccional
+let statusText = "Inicializando...";
+let cameraReady = false;
+let cameraError = false;
+
+const options = {
+  maxFaces: 1,
+  refineLandmarks: true,
+  flipHorizontal: true // espejo para alinear con el video
+};
 
 function setup() {
-  // Contenedor y dimensiones
-  const container = document.getElementById('canvas-container');
-  const w = Math.min(720, container.clientWidth || windowWidth);
-  const h = Math.round(w * 0.75); // 4:3
-
-  const canvas = createCanvas(w, h);
-  canvas.parent('canvas-container');
-
+  // Canvas WEBGL y responsivo
+  const w = Math.min(windowWidth * 0.95, 900);
+  const h = Math.round(w * 0.75);
+  const canvas = createCanvas(w, h, WEBGL);
+  canvas.parent("canvas-container");
+  frameRate(30);
   pixelDensity(1);
 
-  statusEl = select('#status');
-  errorEl  = select('#error-msg');
-
-  // Cámara (front) — playsinline evita pausas en iOS
-  video = createCapture(
-    { video: { facingMode: 'user', width: w, height: h }, audio: false },
-    () => {}
-  );
-  video.size(w, h);
-  video.elt.setAttribute('playsinline', ''); // iOS/WebKit
+  // Crear el video (autoplay y oculto en el DOM, lo dibujamos al canvas)
+  video = createCapture({ video: { facingMode: "user" }, audio: false }, () => {
+    cameraReady = true;
+    statusText = "Cámara lista, cargando modelo FaceMesh...";
+  });
+  // Tamaño base del stream (usado como referencia para el mapeo de puntos)
+  video.size(640, 480);
   video.hide();
+  // Ajustes para mejor compatibilidad de autoplay en móviles
+  video.elt.setAttribute("playsinline", "");
+  video.elt.setAttribute("autoplay", "");
+  video.elt.muted = true;
 
-  video.elt.onloadeddata = () => {
-    statusEl.removeClass('fail warn').addClass('ok').html('✓ Cámara lista');
-  };
+  // Cargar FaceMesh y arrancar detección
+  faceMesh = ml5.faceMesh(options, () => {
+    statusText = "Modelo FaceMesh cargado. Detectando rostro...";
+    faceMesh.detectStart(video, (results) => {
+      faces = results || [];
+      // Al primer rostro, calculamos triangulación con Delaunator y la reutilizamos.
+      if (!triIndices && faces.length > 0 && faces[0].scaledMesh && window.Delaunator) {
+        const pts2D = faces[0].scaledMesh.map((p) => [p[0], p[1]]); // x,y
+        const d = Delaunator.from(pts2D);
+        triIndices = d.triangles; // Uint32Array con índices
+      }
+    });
+  });
 
-  // Modelo FaceMesh de ml5 — detección automática (sin botones)
-  try {
-    facemesh = ml5.facemesh(video, { maxFaces: 1 }, modelReady);
-    facemesh.on('predict', (results) => { predictions = results || []; });
-  } catch (e) {
-    console.error(e);
-    statusEl.removeClass('ok warn').addClass('fail').html('✖ Error iniciando FaceMesh');
-    errorEl.html(String(e));
-  }
-}
-
-function modelReady() {
-  statusEl.removeClass('fail warn').addClass('ok').html('✓ Modelo listo — detectando...');
+  // Si la cámara no responde en 6s, mostrarmos error
+  setTimeout(() => {
+    if (!cameraReady) {
+      cameraError = true;
+      statusText = "No se pudo acceder a la cámara. Revisa permisos o HTTPS/localhost.";
+    }
+  }, 6000);
 }
 
 function draw() {
-  background(0);
+  background(26);
 
-  // Dibuja el video espejado (selfie)
+  // --- VIDEO DE FONDO (espejado) ---
+  // Lo dibujamos como imagen plana detrás de la malla (z negativo) para que se vean ambos.
   push();
-  imageMirrored(video, 0, 0, width, height);
+  // En WEBGL, (0,0) es el centro. Espejamos en X para coincidir con flipHorizontal.
+  scale(-1, 1, 1);
+  translate(0, 0, -200);
+  // Dibujar desde la esquina superior izquierda del canvas
+  image(video, -width / 2, -height / 2, width, height);
   pop();
 
-  // Dibuja malla si hay predicciones
-  if (predictions.length > 0) {
-    statusEl.removeClass('warn fail').addClass('ok').html('✓ Rostro detectado');
+  // --- LUCES 3D ---
+  // Luz ambiental suave + direccional rotante alrededor del rostro
+  ambientLight(80);
+  const lx = Math.cos(lightAngle) * 300;
+  const lz = Math.sin(lightAngle) * 300;
+  directionalLight(255, 255, 255, lx, -120, lz);
+  lightAngle += 0.02;
 
-    const pred = predictions[0];
-    drawWireframe(pred);
-    drawLabels(pred);
+  // --- MALLA FACIAL ---
+  if (faces.length > 0 && faces[0].scaledMesh) {
+    statusText = "Rostro detectado";
+    drawFaceMesh(faces[0]);
   } else {
-    statusEl.removeClass('ok fail').addClass('warn').html('⚠ Buscando rostro...');
-  }
-}
-
-/* ---------- Utilidades de dibujo ---------- */
-
-// Dibuja la imagen espejada sin afectar el sistema de coordenadas
-function imageMirrored(img, x, y, w, h) {
-  push();
-  translate(x + w, y);
-  scale(-1, 1);
-  image(img, 0, 0, w, h);
-  pop();
-}
-
-// Convierte un x a su espejo para alinear con el video espejado
-function mx(x) { return width - x; }
-
-// Dibuja el wireframe usando las anotaciones del modelo
-function drawWireframe(pred) {
-  const ann = pred.annotations || {};
-  stroke(0, 255, 255);
-  strokeWeight(1);
-  noFill();
-
-  const paths = [
-    'silhouette',
-    'leftEyebrowUpper', 'leftEyebrowLower',
-    'rightEyebrowUpper','rightEyebrowLower',
-    'leftEyeUpper0', 'leftEyeLower0',
-    'rightEyeUpper0','rightEyeLower0',
-    'lipsUpperOuter','lipsLowerOuter',
-    'lipsUpperInner','lipsLowerInner',
-    'noseBridge','noseTip'
-  ];
-
-  for (const key of paths) {
-    if (!ann[key]) continue;
-    const pts = ann[key];
-    beginShape();
-    for (const p of pts) {
-      const x = mx(p[0]);
-      const y = p[1];
-      vertex(x, y);
-    }
-    // Cerrar algunas rutas
-    const closed =
-      key === 'silhouette' ||
-      key === 'lipsUpperOuter' || key === 'lipsLowerOuter' ||
-      key === 'lipsUpperInner' || key === 'lipsLowerInner';
-    endShape(closed ? CLOSE : undefined);
+    statusText = cameraError ? "Error de cámara" : "Buscando rostro...";
   }
 
-  // Opcional: puntos finos para densidad visual
-  stroke(0, 255, 180);
-  strokeWeight(2);
-  const mesh = pred.scaledMesh || [];
-  for (const p of mesh) {
-    point(mx(p[0]), p[1]);
-  }
+  // --- HUD de estado ---
+  drawHUD(statusText);
+  // También actualizamos el DOM por accesibilidad
+  const sEl = document.getElementById("status");
+  if (sEl) sEl.textContent = statusText;
 }
 
-// Escribe “ojos”, “boca”, “nariz”
-function drawLabels(pred) {
-  const a = pred.annotations || {};
+function drawFaceMesh(face) {
+  const pts = face.scaledMesh; // Array de 468 puntos: [x,y,z]
+  if (!pts || pts.length !== 468) return;
 
-  // Ojos: centro entre el centro de cada ojo
-  const leftEyeC  = avg2D(a.leftEyeUpper0, a.leftEyeLower0);
-  const rightEyeC = avg2D(a.rightEyeUpper0, a.rightEyeLower0);
-  const eyesC = mid2D(leftEyeC, rightEyeC);
+  const mouthIsOpen = isMouthOpen(pts);
+  const blink = isBlinking(pts);
 
-  // Boca: promedio de upper+lower outer
-  const mouthC = avg2D(a.lipsUpperOuter, a.lipsLowerOuter);
-
-  // Nariz: punta o puente
-  const noseC = avg2D(a.noseTip || a.noseBridge);
+  // Color base: si hay boca abierta, cálido; si parpadeo, dorado
+  let fillColor = mouthIsOpen ? [255, 120, 80] : [120, 200, 255];
+  if (blink) fillColor = [255, 220, 0];
 
   noStroke();
-  fill(255);
-  textAlign(CENTER, CENTER);
-  textSize(16);
+  ambientMaterial(fillColor[0], fillColor[1], fillColor[2]);
 
-  if (eyesC)  text('ojos',  mx(eyesC[0]),  eyesC[1]  - 18);
-  if (mouthC) text('boca',  mx(mouthC[0]), mouthC[1] + 18);
-  if (noseC)  text('nariz', mx(noseC[0]),  noseC[1]  - 12);
-}
-
-/* ---------- Helpers geométricos ---------- */
-
-// Promedio de múltiples listas de puntos 2D (arrays de [x,y,(z)])
-function avg2D(...groups) {
-  const pts = [];
-  for (const g of groups) {
-    if (!g) continue;
-    for (const p of g) pts.push(p);
+  // Triangulación disponible (reutilizada cada frame)
+  if (!triIndices && window.Delaunator) {
+    const d = Delaunator.from(pts.map((p) => [p[0], p[1]]));
+    triIndices = d.triangles;
   }
-  if (pts.length === 0) return null;
-  let sx = 0, sy = 0;
-  for (const p of pts) { sx += p[0]; sy += p[1]; }
-  return [sx / pts.length, sy / pts.length];
+
+  if (triIndices) {
+    beginShape(TRIANGLES);
+    for (let i = 0; i < triIndices.length; i += 3) {
+      const a = triIndices[i];
+      const b = triIndices[i + 1];
+      const c = triIndices[i + 2];
+
+      let va = mapToCanvas3D(pts[a]);
+      let vb = mapToCanvas3D(pts[b]);
+      let vc = mapToCanvas3D(pts[c]);
+
+      // Deformación sutil cerca de la boca cuando está abierta
+      if (mouthIsOpen) {
+        const m = mouthCenter(pts);
+        const influence = 80;      // radio de influencia en píxeles (espacio de video)
+        const pushZ = 12;          // cuánto sobresale hacia la cámara
+
+        va = deformNearMouth(va, pts[a], m, influence, pushZ);
+        vb = deformNearMouth(vb, pts[b], m, influence, pushZ);
+        vc = deformNearMouth(vc, pts[c], m, influence, pushZ);
+      }
+
+      vertex(va.x, va.y, va.z);
+      vertex(vb.x, vb.y, vb.z);
+      vertex(vc.x, vc.y, vc.z);
+    }
+    endShape();
+  } else {
+    // Fallback visual si no hay triangulación: puntos
+    stroke(0, 255, 255);
+    strokeWeight(2);
+    for (let i = 0; i < pts.length; i++) {
+      const v = mapToCanvas3D(pts[i]);
+      point(v.x, v.y, v.z);
+    }
+  }
 }
 
-function mid2D(a, b) {
-  if (!a) return b || null;
-  if (!b) return a || null;
-  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+// --- UTILIDADES DE MALLA/GEOMETRÍA ---
+function mapToCanvas3D(p) {
+  // p = [x,y,z] en coordenadas de video (px). Convertimos a coordenadas WEBGL del canvas.
+  const videoW = video.width || 640;
+  const videoH = video.height || 480;
+
+  // Convertimos x,y: (0..videoW, 0..videoH) -> (-videoW/2..videoW/2, videoH/2..-videoH/2)
+  const x = p[0] - videoW / 2;
+  const y = (videoH / 2) - p[1];
+
+  // z es negativo (más lejos) en FaceMesh. Lo escalamos para que se aprecie la profundidad.
+  const z = -p[2] * 1.5;
+
+  // Ajustamos por el escalado del canvas respecto al video, para mantener proporciones.
+  const sx = width / videoW;
+  const sy = height / videoH;
+  const s = (sx + sy) * 0.5;
+
+  return { x: x * sx, y: y * sy, z: z * s };
 }
 
-/* ---------- Resize ---------- */
+function mouthCenter(pts) {
+  const up = pts[13];  // labio superior
+  const low = pts[14]; // labio inferior
+  return { x: (up[0] + low[0]) * 0.5, y: (up[1] + low[1]) * 0.5 };
+}
+
+function deformNearMouth(vCanvas, pVideo, mouth, influence = 80, pushZ = 12) {
+  const d = dist(pVideo[0], pVideo[1], mouth.x, mouth.y);
+  if (d < influence) {
+    const k = 1 - d / influence;   // 0..1
+    return { x: vCanvas.x, y: vCanvas.y, z: vCanvas.z - k * pushZ };
+  }
+  return vCanvas;
+}
+
+function isMouthOpen(pts) {
+  // Distancia vertical entre 13 (labio sup.) y 14 (labio inf.)
+  const up = pts[13];
+  const low = pts[14];
+  const mouthDist = Math.hypot(up[0] - low[0], up[1] - low[1]);
+
+  // Normalizamos por la altura de la cara (10 frente ~ 152 mentón)
+  const top = pts[10];
+  const chin = pts[152];
+  const faceH = Math.hypot(top[0] - chin[0], top[1] - chin[1]);
+  const ratio = mouthDist / faceH;
+
+  // Umbral empírico
+  return ratio > 0.06;
+}
+
+function isBlinking(pts) {
+  // Parpadeo simple con distancias verticales de párpados
+  // Ojo izq.: 159 (párpado sup.), 145 (párpado inf.)
+  // Ojo der.: 386 (sup.), 374 (inf.)
+  const l = Math.hypot(pts[159][0] - pts[145][0], pts[159][1] - pts[145][1]);
+  const r = Math.hypot(pts[386][0] - pts[374][0], pts[386][1] - pts[374][1]);
+
+  const top = pts[10], chin = pts[152];
+  const faceH = Math.hypot(top[0] - chin[0], top[1] - chin[1]);
+
+  const rl = l / faceH;
+  const rr = r / faceH;
+  return rl < 0.012 && rr < 0.012;
+}
+
+function drawHUD(textLine) {
+  // HUD 2D superpuesto (sin afectar la escena 3D)
+  push();
+  resetMatrix();
+  noLights(); // el HUD no necesita luces
+  fill(255);
+  noStroke();
+  textSize(14);
+  textAlign(LEFT, TOP);
+  text(textLine, 12, 12);
+  pop();
+}
+
 function windowResized() {
-  const container = document.getElementById('canvas-container');
-  const w = Math.min(720, container.clientWidth || windowWidth);
+  const w = Math.min(windowWidth * 0.95, 900);
   const h = Math.round(w * 0.75);
   resizeCanvas(w, h);
-  if (video) video.size(w, h);
 }

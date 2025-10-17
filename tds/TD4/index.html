@@ -1,33 +1,31 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Scan Facial 3D</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Escaneo Facial 3D Interactivo</title>
 
-  <!-- Librerías -->
+  <!-- p5.js y ml5.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
   <script src="https://unpkg.com/ml5@1/dist/ml5.min.js"></script>
+  <!-- Triangulación rápida (2D) para generar los triángulos una sola vez -->
+  <script src="https://unpkg.com/delaunator@5.0.0/delaunator.min.js"></script>
 
-  <!-- Estilos -->
-  <link rel="stylesheet" href="styles.css"/>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div id="app">
-    <header>
-      <h1>🎭 Scan Facial</h1>
-      <p class="subtitle">ml5.js FaceMesh + p5.js • Detección automática</p>
-    </header>
+  <main class="container">
+    <h1>Escaneo Facial 3D con FaceMesh</h1>
+    <p class="subtitle">Video + malla 3D al mismo tiempo. Sin opciones: la cámara se inicia automáticamente.</p>
 
-    <!-- Contenedor del canvas -->
-    <div id="canvas-container"></div>
-
-    <!-- Estado -->
     <div id="status" class="status">Inicializando...</div>
-    <div id="error-msg" class="error"></div>
 
-    <p class="note">Permite el acceso a la cámara cuando el navegador lo solicite.</p>
-  </div>
+    <div id="canvas-container" class="canvas-wrapper"></div>
+
+    <noscript>
+      <p>Este proyecto requiere JavaScript habilitado.</p>
+    </noscript>
+  </main>
 
   <script src="sketch.js"></script>
 </body>
