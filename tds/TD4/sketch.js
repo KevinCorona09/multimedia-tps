@@ -1,7 +1,9 @@
 /* =========================================================================
    Escaneo Facial 3D Interactivo con ml5.js FaceMesh + p5.js (WEBGL)
-   Ajustado para móviles: autoplay inline, mute, arranque por gesto de usuario,
-   canvas responsivo y sincronización de tamaños.
+   Correcciones:
+   - Se dibuja el VIDEO como textura de fondo (plano) y en espejo.
+   - El tamaño del canvas se calcula con el ancho REAL del contenedor.
+   - flipHorizontal activado para alinear landmarks con la cámara frontal.
    ========================================================================= */
 
 let faceMesh;                 // Modelo FaceMesh de ml5
@@ -10,7 +12,7 @@ let faces = [];               // Resultados de detección
 let options = {
   maxFaces: 1,
   refineLandmarks: false,
-  flipHorizontal: false
+  flipHorizontal: true       // ✅ espejo para cámara frontal
 };
 
 // Iluminación
@@ -18,7 +20,7 @@ let lightIntensity = 220;
 let rotationAngle = 0;
 
 // Controles
-let isDetecting = false;      // ⟵ En móvil es más seguro iniciar pausado
+let isDetecting = false;      // Arranque pausado hasta gesto del usuario
 let showKeypoints = false;
 let enableDeformation = true;
 
@@ -32,11 +34,9 @@ function preload() {
 
 // ------------------------ Setup ------------------------
 function setup() {
-  // Densidad 1 para evitar cargas en pantallas Retina
   pixelDensity(1);
 
-  // Canvas responsivo (4:3) limitado a 720px de ancho
-  const { w, h } = canvasSizeFromWindow();
+  const { w, h } = canvasSizeFromContainer();
   const canvas = createCanvas(w, h, WEBGL);
   canvas.parent('canvas-container');
   frameRate(30);
@@ -44,7 +44,7 @@ function setup() {
   statusEl = select('#status');
   errorEl = select('#error-msg');
 
-  // Captura de vídeo con atributos obligatorios para móvil
+  // Captura de vídeo con atributos para móvil
   video = createCapture({
     video: {
       width: { ideal: 1280 },
@@ -52,28 +52,25 @@ function setup() {
       facingMode: 'user'
     },
     audio: false
-  }, () => { /* permisos concedidos */ });
+  });
 
   // Atributos HTML necesarios para iOS/Android
-  video.elt.setAttribute('playsinline', ''); // iOS Safari
-  video.elt.setAttribute('autoplay', '');    // intenta reproducir
-  video.elt.setAttribute('muted', '');       // autoplay sin gesto
+  video.elt.setAttribute('playsinline', '');
+  video.elt.setAttribute('autoplay', '');
+  video.elt.setAttribute('muted', '');
   video.elt.playsInline = true;
   video.elt.muted = true;
   video.elt.autoplay = true;
 
-  // Ocultar el elemento (renderizamos nuestra malla)
+  // Ocultamos el <video> nativo; lo dibujamos como textura en el canvas
   video.hide();
 
   // Cuando el vídeo tenga metadatos, sincronizamos tamaños
   video.elt.onloadedmetadata = () => {
-    // Igualar tamaño del video al del canvas (mejora la inferencia)
-    video.size(width, height);
-    // Intentamos reproducir por si el navegador lo pausó
+    video.size(width, height);                 // ✅ igualar a canvas
     const p = video.elt.play?.();
     if (p && typeof p.then === 'function') p.catch(() => {/* ignorar */});
 
-    // Si el usuario ya activó la detección, arrancamos ahora
     if (isDetecting) {
       faceMesh.detectStart(video, gotFaces);
       statusEl.removeClass('fail warn').addClass('ok').html('Caméra prête');
@@ -82,7 +79,7 @@ function setup() {
     }
   };
 
-  // Mensaje de error si no hay cámara tras unos segundos
+  // Mensaje de error si no hay cámara
   setTimeout(() => {
     if (!video.elt || !video.elt.srcObject) {
       errorEl.html('Impossible d’accéder à la caméra. Vérifiez les autorisations ou utilisez HTTPS/localhost.');
@@ -90,42 +87,54 @@ function setup() {
     }
   }, 6000);
 
-  // Crear los controles
   createControls();
 }
 
 // ------------------------ Redimensionado responsivo ------------------------
 function windowResized() {
-  const { w, h } = canvasSizeFromWindow();
+  const { w, h } = canvasSizeFromContainer();
   resizeCanvas(w, h);
-  // Mantener video sincronizado con el canvas
-  if (video) video.size(w, h);
+  if (video) video.size(w, h);                // ✅ mantener sincronía
 }
 
-// Cálculo del tamaño del canvas en función del ancho de la ventana
-function canvasSizeFromWindow() {
-  const margin = 32;                 // margen lateral aproximado del layout
-  const maxW = 720;                  // tope superior
-  const w = Math.min(windowWidth - margin, maxW);
-  const h = Math.round(w * 0.75);    // relación 4:3
-  return { w: Math.max(280, w), h: Math.max(210, h) };
+// Cálculo del tamaño del canvas en función del ancho del CONTENEDOR
+function canvasSizeFromContainer() {
+  const el = document.getElementById('canvas-container');
+  const maxW = 720;
+  const baseW = el?.clientWidth ? Math.min(el.clientWidth, maxW) : Math.min(windowWidth - 32, maxW);
+  const w = Math.max(280, baseW);
+  const h = Math.max(210, Math.round(w * 0.75));  // relación 4:3
+  return { w, h };
 }
 
 // ------------------------ Bucle de dibujo ------------------------
 function draw() {
   background(26);
 
-  // Rotación orbital (arrastre con dedo/mouse) y límites de zoom suaves
+  // Controles de cámara 3D
   orbitControl(2, 2, 0.1);
-
   setupLighting();
 
-  // Y hacia arriba para que los landmarks sean intuitivos
+  // 1) DIBUJAR EL VÍDEO como fondo (en espejo horizontal)
+  if (video && video.width && video.height) {
+    push();
+    noStroke();
+    // Plano al fondo; espejo horizontal con scale(-1,1,1)
+    // (Ojo: aquí NO invertimos el eje Y)
+    translate(0, 0, -400);
+    scale(-1, 1, 1);
+    texture(video);
+    plane(width, height);
+    pop();
+  }
+
+  // 2) DIBUJAR LA MALLA (invertimos Y para que los landmarks sean intuitivos)
+  push();
   scale(1, -1, 1);
 
   if (!isDetecting) {
-    // Si está pausado, mostramos estado y salimos
     statusEl.removeClass('ok warn').addClass('fail').html('Détection en pause');
+    pop();
     return;
   }
 
@@ -135,6 +144,7 @@ function draw() {
   } else {
     statusEl.removeClass('ok fail').addClass('warn').html('Aucun visage détecté');
   }
+  pop();
 
   rotationAngle += 0.01;
 }
@@ -229,7 +239,6 @@ function createControls() {
   btn.addClass('control'); btn.parent(ui);
   const start = () => {
     if (!isDetecting) {
-      // Aseguramos reproducción de vídeo
       const p = video?.elt?.play?.(); if (p && p.then) p.catch(()=>{});
       faceMesh.detectStart(video, gotFaces);
       isDetecting = true;
@@ -259,20 +268,11 @@ function createControls() {
   const chkPts = createCheckbox('Afficher les points clés', showKeypoints);
   chkPts.parent(boxPts); chkPts.changed(() => (showKeypoints = chkPts.checked()));
 
-  // En iOS/Android, el primer toque a cualquier control sirve como gesto de usuario
-  // para permitir play() del vídeo; por eso también llamamos start() en el primer touch
-  // cuando aún no se ha iniciado.
-  window.addEventListener('touchstart', () => { if (!isDetecting) {/* no auto */} }, { once:true });
+  // Primer toque sirve como gesto de usuario para permitir play() del vídeo
+  window.addEventListener('touchstart', () => { /* noop */ }, { once:true });
 }
 
 // ------------------------ Triangulación por defecto -----------------------
-/*
-  Nota importante:
-  - Algunos builds de ml5 FaceMesh incluyen face.triangles en cada predicción.
-  - Si no está presente, usamos la constante TRIANGULATION de MediaPipe FaceMesh.
-  - Por brevedad y rendimiento, incluimos la triangulación estándar minificada.
-  - Cada tripleta es un triángulo (índices referidos a los 468 puntos).
-*/
 const TRIANGULATION = [
   127,34,139, 11,0,37, 232,231,120, 72,37,39, 128,121,47, 232,121,128, 104,69,67,
   175,171,148, 157,154,155, 118,50,101, 73,39,40, 9,151,108, 48,115,131, 194,204,211,
@@ -287,23 +287,6 @@ const TRIANGULATION = [
   406,418,419, 426,436,423, 429,420,421, 360,363,440, 437,399,456, 420,437,456, 363,360,279,
   278,279,360, 333,332,297, 175,152,377, 365,397,367, 440,437,438, 297,338,337, 335,273,321,
   348,330,329, 293,298,333, 252,272,271, 322,320,406, 271,311,268, 313,314,17, 287,291,423,
-  406,422,322, 374,386,380, 285,295,336, 265,372,353, 461,241,1, 1,44,61, 3,236,51,
-  238,79,20, 80,20,79, 242,20,80, 22,23,24, 26,22,24, 112,26,24, 47,121,143, 35,143,124,
-  110,24,23, 110,23,111, 247,30,29, 226,247,29, 113,225,46, 223,224,53, 46,53,225, 222,65,52,
-  221,3,51, 287,432,422, 434,416,367, 399,412,343, 289,392,250, 376,433,421, 348,347,330,
-  429,304,303, 330,329,347, 293,333,297, 299,297,337, 244,233,128, 188,174,196, 196,174,236,
-  236,174,3, 45,51,236, 226,113,247, 71,68,104, 73,40,72, 80,79,82, 82,79,13,
-  91,80,82, 13,80,91, 14,87,86, 85,86,87, 87,14,15, 15,86,87, 129,102,49,
-  49,102,64, 225,224,46, 46,224,53, 33,7,163, 160,27,29, 30,247,160, 247,226,160,
-  25,110,24, 165,203,98, 99,98,97, 35,124,156, 33,246,7, 188,174,196, 221,51,3,
-  236,3,45, 94,2,97, 141,242,97, 97,242,99, 141,97,2, 141,2,164, 54,21,68,
-  3,173,236, 236,173,58, 59,236,58, 236,59,45, 64,98,102, 129,49,48, 48,131,129,
-  148,171,175, 140,176,149, 402,318,324, 430,432,287, 422,432,434, 434,367,397, 396,369,262,
-  353,265,249, 357,453,446, 299,337,337, 446,352,340, 352,345,340, 340,372,345, 265,353,372,
-  /* ... (lista completa estándar; suficiente para dibujar toda la malla) ... */
+  406,422,322, 374,386,380, 285,295,336, 265,372,353
+  /* (lista reducida para fallback; si ml5 provee face.triangles se usa aquello) */
 ];
-
-/*  Nota: la lista anterior es la triangulación estándar del modelo FaceMesh.
-    Si tu build de ml5 devuelve face.triangles, se utilizará preferentemente.
-    Esta constante garantiza que se muestren los triángulos aunque no exista
-    face.triangles en los resultados. */

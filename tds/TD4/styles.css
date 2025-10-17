@@ -67,7 +67,6 @@ h1 .brand{ background: linear-gradient(90deg, #cfe2ff, #fff); -webkit-background
 h1 .thin{ font-weight: 800; color: #d6dcff; }
 .subtitle{ position: relative; z-index: 1; margin: 6px auto 0; color: var(--muted); font-size: .95rem; }
 
-/* Panel “glass” */
 .panel{
   background: linear-gradient(180deg, var(--card), var(--card-2));
   border: 1px solid var(--line); border-radius: var(--radius);
@@ -79,15 +78,15 @@ h1 .thin{ font-weight: 800; color: #d6dcff; }
   display: grid; 
   place-items: center; 
   min-height: 60vh;
-  padding: 20px;          /* ✅ Agregado */
-  overflow: visible;       /* ✅ Cambiado de hidden */
+  padding: 20px;
+  overflow: visible;
 }
 .canvas-card{ 
   position: relative; 
   isolation: isolate;
-  width: 100%;            /* ✅ Agregado */
-  max-width: 720px;       /* ✅ Agregado */
-  display: flex;          /* ✅ Agregado */
+  width: 100%;
+  max-width: 720px;
+  display: flex;
   justify-content: center;
   align-items: center;
 }
@@ -171,12 +170,11 @@ button, input, label{ outline-offset: 3px; }
 @media (max-width: 720px){
   #app{ padding-bottom: 40px; }
   input[type="range"]{ width: 200px; }
-  #canvas-container { padding: 15px; }  /* ✅ Agregado */
+  #canvas-container { padding: 15px; }
 }
 
-.canvas-card canvas {     /* ✅ Nueva regla */
+.canvas-card canvas {
   display: block !important;
   max-width: 100%;
-  height: auto;
   border-radius: var(--radius);
 }
