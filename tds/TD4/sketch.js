@@ -1,253 +1,315 @@
-/* =========================================================================
-   Scan facial 3D (ml5 FaceMesh + p5 WEBGL)
-   Fixes:
-   - El vídeo se dibuja con image() (no textura), así evita problemas con luces.
-   - Espejado con scale(-1,1).
-   - z-index del canvas por encima de ::after (ver CSS).
-   - Reintento de play() en primer click/toque.
-   ========================================================================= */
 
 let faceMesh;
 let video;
 let faces = [];
+let isReady = false;
+
+// Opciones de detección
 let options = {
   maxFaces: 1,
   refineLandmarks: false,
-  flipHorizontal: true
+  flipHorizontal: false  // NO flipear en el modelo, lo haremos manualmente
 };
 
-let lightIntensity = 220;
-let rotationAngle = 0;
-
+// Controles
 let isDetecting = false;
 let showKeypoints = false;
 let enableDeformation = true;
+let lightIntensity = 200;
+let rotationAngle = 0;
 
+// Elementos de UI
 let statusEl, errorEl;
 
-function setup() {
-  pixelDensity(1);
+// ==================== SETUP ====================
+function preload() {
+  // Cargar el modelo antes de setup
+  faceMesh = ml5.faceMesh(options);
+}
 
-  const { w, h } = canvasSizeFromContainer();
+function setup() {
+  // Crear canvas dentro del contenedor
+  const container = document.getElementById('canvas-container');
+  const w = Math.min(720, container.clientWidth || windowWidth);
+  const h = Math.round(w * 0.75); // Ratio 4:3
+  
   const canvas = createCanvas(w, h, WEBGL);
   canvas.parent('canvas-container');
+  
+  pixelDensity(1);
   frameRate(30);
-
+  
+  // Referencias a elementos
   statusEl = select('#status');
   errorEl = select('#error-msg');
-
-  // Cámara
-  video = createCapture({
-    video: {
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-      facingMode: 'user'
-    },
-    audio: false
-  });
-  video.elt.setAttribute('playsinline', '');
-  video.elt.setAttribute('autoplay', '');
-  video.elt.setAttribute('muted', '');
-  video.elt.playsInline = true;
-  video.elt.muted = true;
-  video.elt.autoplay = true;
-  video.hide();
-
-  // Intenta reproducir al tener metadatos
-  video.elt.onloadedmetadata = () => {
-    video.size(width, height);
-    try { const p = video.elt.play(); if (p && p.catch) p.catch(()=>{}); } catch(e){}
-    statusEl.removeClass('fail warn').addClass('ok').html('Caméra prête');
-    // Carga el modelo y empieza si el usuario lo activa
-    faceMesh = ml5.faceMesh(options);
-  };
-
-  // Gesto del usuario: fuerza play() en navegadores estrictos
-  const resumeVideo = () => {
-    if (!video || !video.elt) return;
-    try { const p = video.elt.play(); if (p && p.catch) p.catch(()=>{}); } catch(e){}
-    window.removeEventListener('click', resumeVideo);
-    window.removeEventListener('touchend', resumeVideo);
-  };
-  window.addEventListener('click', resumeVideo, { passive: true });
-  window.addEventListener('touchend', resumeVideo, { passive: true });
-
-  // Mensaje de error si no hay cámara
-  setTimeout(() => {
-    if (!video.elt || !video.elt.srcObject) {
-      errorEl.html('Impossible d’accéder à la caméra. Vérifiez les autorisations ou utilisez HTTPS/localhost.');
-      statusEl.removeClass('ok').addClass('fail').html('Caméra indisponible');
-    }
-  }, 6000);
-
+  
+  // Iniciar cámara
+  video = createCapture(VIDEO, videoReady);
+  video.size(w, h);
+  video.hide(); // Ocultamos el elemento HTML del video
+  
+  // Crear controles
   createControls();
 }
 
+function videoReady() {
+  console.log('Video listo:', video.width, 'x', video.height);
+  isReady = true;
+  statusEl.removeClass('fail warn').addClass('ok').html('✓ Cámara lista');
+}
+
+// ==================== DRAW ====================
+function draw() {
+  background(0);
+  
+  // Si el video no está listo, salir
+  if (!video || !isReady) {
+    fill(255);
+    textAlign(CENTER, CENTER);
+    text('Esperando cámara...', 0, 0);
+    return;
+  }
+  
+  // ===== PASO 1: DIBUJAR VIDEO COMO FONDO =====
+  push();
+  translate(-width/2, -height/2, 0); // Esquina superior izquierda
+  
+  // Espejo horizontal del video
+  push();
+  translate(width, 0);
+  scale(-1, 1);
+  image(video, 0, 0, width, height);
+  pop();
+  
+  pop();
+  
+  // ===== PASO 2: DIBUJAR MALLA 3D ENCIMA =====
+  if (isDetecting && faces.length > 0) {
+    // Habilitar control orbital
+    orbitControl(2, 2, 0.1);
+    
+    // Configurar iluminación
+    setupLighting();
+    
+    // Dibujar la malla
+    push();
+    scale(1, -1, 1); // Invertir Y para coordenadas correctas
+    drawFaceMesh();
+    pop();
+    
+    statusEl.removeClass('warn fail').addClass('ok').html('✓ Rostro detectado');
+  } else if (isDetecting) {
+    statusEl.removeClass('ok fail').addClass('warn').html('⚠ Buscando rostro...');
+  } else {
+    statusEl.removeClass('ok warn').addClass('fail').html('✖ Detección pausada');
+  }
+  
+  // Rotar la luz
+  rotationAngle += 0.01;
+}
+
+// ==================== ILUMINACIÓN ====================
+function setupLighting() {
+  ambientLight(lightIntensity * 0.4);
+  
+  // Luz direccional rotativa
+  const lx = cos(rotationAngle) * 0.7;
+  const ly = -0.5;
+  const lz = sin(rotationAngle) * 0.7;
+  
+  directionalLight(lightIntensity, lightIntensity, lightIntensity, lx, ly, lz);
+}
+
+// ==================== DIBUJAR MALLA ====================
+function drawFaceMesh() {
+  const face = faces[0];
+  if (!face || !face.keypoints) return;
+  
+  const keypoints = face.keypoints;
+  
+  // Convertir puntos a coordenadas centradas
+  const points = keypoints.map(kp => {
+    // Espejo horizontal para que coincida con el video
+    const x = -(kp.x - video.width / 2);
+    const y = kp.y - video.height / 2;
+    const z = (kp.z || 0) * -150; // Profundidad amplificada
+    return { x, y, z };
+  });
+  
+  // Detectar expresiones
+  const mouthOpen = detectMouthOpen(points);
+  const isBlink = detectBlink(points);
+  
+  // Deformación por boca abierta
+  const deformStrength = enableDeformation ? constrain(map(mouthOpen, 0.05, 0.3, 0, 1), 0, 1) : 0;
+  
+  // Color del material según expresión
+  noStroke();
+  if (isBlink) {
+    emissiveMaterial(80, 80, 100); // Azulado al parpadear
+  } else if (deformStrength > 0.1) {
+    ambientMaterial(200, 150 - 50 * deformStrength, 150 - 50 * deformStrength);
+  } else {
+    ambientMaterial(180, 180, 180);
+  }
+  
+  // Dibujar triángulos
+  beginShape(TRIANGLES);
+  for (let i = 0; i < TRIANGULATION.length; i += 3) {
+    const p0 = applyDeformation(points[TRIANGULATION[i]], points, deformStrength);
+    const p1 = applyDeformation(points[TRIANGULATION[i + 1]], points, deformStrength);
+    const p2 = applyDeformation(points[TRIANGULATION[i + 2]], points, deformStrength);
+    
+    vertex(p0.x, p0.y, p0.z);
+    vertex(p1.x, p1.y, p1.z);
+    vertex(p2.x, p2.y, p2.z);
+  }
+  endShape();
+  
+  // Dibujar keypoints si está activado
+  if (showKeypoints) {
+    stroke(0, 255, 255);
+    strokeWeight(4);
+    noFill();
+    for (const p of points) {
+      point(p.x, p.y, p.z);
+    }
+  }
+}
+
+// ==================== DEFORMACIÓN ====================
+function applyDeformation(p, points, strength) {
+  if (strength < 0.01) return p;
+  
+  // Centro de la boca (promedio de puntos labiales superiores e inferiores)
+  const mouthCenter = {
+    x: (points[13].x + points[14].x) / 2,
+    y: (points[13].y + points[14].y) / 2,
+    z: (points[13].z + points[14].z) / 2
+  };
+  
+  const dx = p.x - mouthCenter.x;
+  const dy = p.y - mouthCenter.y;
+  const dz = p.z - mouthCenter.z;
+  const distSq = dx * dx + dy * dy + dz * dz;
+  
+  // Radio de influencia
+  const radiusSq = 80 * 80;
+  
+  if (distSq > radiusSq) return p;
+  
+  // Factor de deformación basado en distancia
+  const factor = (1 - distSq / radiusSq) * strength;
+  
+  return {
+    x: p.x,
+    y: p.y + 12 * factor,
+    z: p.z - 18 * factor
+  };
+}
+
+// ==================== DETECCIÓN DE EXPRESIONES ====================
+function detectMouthOpen(points) {
+  if (!points[13] || !points[14] || !points[61] || !points[291]) return 0;
+  
+  const upperLip = points[13];
+  const lowerLip = points[14];
+  const leftMouth = points[61];
+  const rightMouth = points[291];
+  
+  const mouthHeight = dist(upperLip.x, upperLip.y, lowerLip.x, lowerLip.y);
+  const mouthWidth = dist(leftMouth.x, leftMouth.y, rightMouth.x, rightMouth.y);
+  
+  return mouthHeight / (mouthWidth || 1);
+}
+
+function detectBlink(points) {
+  // Puntos de los ojos
+  const leftEyePoints = [159, 145, 33, 133];
+  const rightEyePoints = [386, 374, 362, 263];
+  
+  // Verificar que existen
+  for (const i of [...leftEyePoints, ...rightEyePoints]) {
+    if (!points[i]) return false;
+  }
+  
+  // Ratio de apertura del ojo
+  const leftRatio = dist3D(points[159], points[145]) / dist3D(points[33], points[133]);
+  const rightRatio = dist3D(points[386], points[374]) / dist3D(points[362], points[263]);
+  
+  return leftRatio < 0.05 && rightRatio < 0.05;
+}
+
+function dist3D(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  const dz = a.z - b.z;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+// ==================== CALLBACK DE DETECCIÓN ====================
+function gotFaces(results) {
+  faces = results || [];
+}
+
+// ==================== CONTROLES ====================
+function createControls() {
+  const container = select('#controls');
+  
+  // Botón de inicio/pausa
+  const btnStart = createButton('▶️ Iniciar Detección');
+  btnStart.parent(container);
+  btnStart.mousePressed(() => {
+    if (!isDetecting) {
+      faceMesh.detectStart(video, gotFaces);
+      isDetecting = true;
+      btnStart.html('⏸️ Pausar Detección');
+      statusEl.removeClass('fail warn').addClass('ok').html('✓ Detectando...');
+    } else {
+      faceMesh.detectStop();
+      isDetecting = false;
+      btnStart.html('▶️ Iniciar Detección');
+      faces = [];
+      statusEl.removeClass('ok warn').addClass('fail').html('✖ Detección pausada');
+    }
+  });
+  
+  // Control de luz
+  const lightBox = createDiv('').addClass('control').parent(container);
+  createElement('label', 'Luz: ').parent(lightBox);
+  const lightSlider = createSlider(50, 255, lightIntensity, 5);
+  lightSlider.parent(lightBox);
+  lightSlider.input(() => {
+    lightIntensity = lightSlider.value();
+  });
+  
+  // Checkbox deformación
+  const deformBox = createDiv('').addClass('control').parent(container);
+  const chkDeform = createCheckbox(' Deformación', enableDeformation);
+  chkDeform.parent(deformBox);
+  chkDeform.changed(() => {
+    enableDeformation = chkDeform.checked();
+  });
+  
+  // Checkbox keypoints
+  const keypointsBox = createDiv('').addClass('control').parent(container);
+  const chkKeypoints = createCheckbox(' Mostrar puntos', showKeypoints);
+  chkKeypoints.parent(keypointsBox);
+  chkKeypoints.changed(() => {
+    showKeypoints = chkKeypoints.checked();
+  });
+}
+
+// ==================== RESIZE ====================
 function windowResized() {
-  const { w, h } = canvasSizeFromContainer();
+  const container = document.getElementById('canvas-container');
+  const w = Math.min(720, container.clientWidth || windowWidth);
+  const h = Math.round(w * 0.75);
   resizeCanvas(w, h);
   if (video) video.size(w, h);
 }
 
-function canvasSizeFromContainer() {
-  const el = document.getElementById('canvas-container');
-  const maxW = 720;
-  const baseW = el?.clientWidth ? Math.min(el.clientWidth, maxW) : Math.min(windowWidth - 32, maxW);
-  const w = Math.max(280, baseW);
-  const h = Math.max(210, Math.round(w * 0.75));
-  return { w, h };
-}
-
-function draw() {
-  background(26);
-
-  // --- 1) VIDEO DE FONDO (2D en WEBGL) ---
-  if (video && video.elt && video.elt.readyState >= 2) {
-    push();
-    noStroke();
-    // Espejo horizontal
-    scale(-1, 1, 1);
-    // En WEBGL el (0,0) está en el centro
-    image(video, -width/2, -height/2, width, height);
-    pop();
-  }
-
-  // --- 2) MALLA 3D ---
-  // Luces y control orbital no afectan a la imagen 2D de arriba
-  orbitControl(2, 2, 0.1);
-  setupLighting();
-
-  push();
-  scale(1, -1, 1);
-
-  if (!isDetecting) {
-    statusEl.removeClass('ok warn').addClass('fail').html('Détection en pause');
-    pop();
-    return;
-  }
-
-  if (faces.length > 0) {
-    drawFaceMesh();
-    statusEl.removeClass('warn fail').addClass('ok').html('Visage détecté');
-  } else {
-    statusEl.removeClass('ok fail').addClass('warn').html('Aucun visage détecté');
-  }
-  pop();
-
-  rotationAngle += 0.01;
-}
-
-function setupLighting() {
-  ambientLight(lightIntensity * 0.3);
-  const lx = cos(rotationAngle), lz = sin(rotationAngle), ly = -0.35;
-  directionalLight(lightIntensity, lightIntensity, lightIntensity, lx, ly, lz);
-}
-
-function gotFaces(results) { faces = results || []; }
-
-function drawFaceMesh() {
-  const face = faces[0];
-  const raw = face?.keypoints || face?.scaledMesh || face?.landmarks || [];
-  if (!raw.length) return;
-
-  const pts = raw.map(p => {
-    let x, y, z;
-    if (Array.isArray(p)) [x, y, z] = p; else { x = p.x; y = p.y; z = p.z; }
-    const cx = x - (video.width / 2);
-    const cy = y - (video.height / 2);
-    const cz = -(z || 0) * 110;
-    return { x: cx, y: cy, z: cz };
-  });
-
-  const mouthOpenRatio = detectMouthOpen(pts);
-  const isBlinking = detectBlink(pts);
-  const deformStrength = enableDeformation ? constrain(map(mouthOpenRatio, 0.05, 0.25, 0, 1), 0, 1) : 0;
-
-  noStroke();
-  if (isBlinking) emissiveMaterial(70, 70, 70);
-  else if (deformStrength > 0.01) ambientMaterial(160 + 60 * deformStrength, 120, 120);
-  else ambientMaterial(185);
-
-  const tris = face.triangles || TRIANGULATION;
-  if (!tris?.length) return;
-
-  beginShape(TRIANGLES);
-  for (let i = 0; i < tris.length; i += 3) {
-    const v0 = applyDeformation(pts[tris[i]], pts, deformStrength);
-    const v1 = applyDeformation(pts[tris[i+1]], pts, deformStrength);
-    const v2 = applyDeformation(pts[tris[i+2]], pts, deformStrength);
-    vertex(v0.x, v0.y, v0.z); vertex(v1.x, v1.y, v1.z); vertex(v2.x, v2.y, v2.z);
-  }
-  endShape();
-
-  if (showKeypoints) {
-    stroke(0, 255, 255); strokeWeight(3); noFill();
-    for (const p of pts) point(p.x, p.y, p.z);
-  }
-}
-
-function applyDeformation(p, pts, s) {
-  if (!s) return p;
-  const mouthCenter = {
-    x: (pts[13].x + pts[14].x) * .5,
-    y: (pts[13].y + pts[14].y) * .5,
-    z: (pts[13].z + pts[14].z) * .5
-  };
-  const dx = p.x - mouthCenter.x, dy = p.y - mouthCenter.y, dz = p.z - mouthCenter.z;
-  const d2 = dx*dx + dy*dy + dz*dz, radius2 = 70*70;
-  if (d2 > radius2) return p;
-  const w = (1 - (d2 / radius2)) * s;
-  return { x: p.x, y: p.y + 10*w, z: p.z - 14*w };
-}
-
-function detectMouthOpen(pts) {
-  if (!pts[13] || !pts[14] || !pts[61] || !pts[291]) return 0;
-  const mouthOpen = dist3D(pts[13], pts[14]), mouthWidth = dist3D(pts[61], pts[291]);
-  return mouthOpen / (mouthWidth || 1);
-}
-function detectBlink(pts) {
-  const need = [159,145,33,133,386,374,362,263]; for (const i of need) if (!pts[i]) return false;
-  const lRatio = dist3D(pts[159], pts[145]) / (dist3D(pts[33],  pts[133]) || 1);
-  const rRatio = dist3D(pts[386], pts[374]) / (dist3D(pts[362], pts[263]) || 1);
-  return (lRatio < 0.045 && rRatio < 0.045);
-}
-function dist3D(a,b){ const dx=a.x-b.x, dy=a.y-b.y, dz=a.z-b.z; return Math.hypot(dx,dy,dz); }
-
-function createControls() {
-  const ui = select('#controls');
-
-  const btn = createButton('▶️ Démarrer la détection');
-  btn.addClass('control'); btn.parent(ui);
-  const start = () => {
-    if (!isDetecting) {
-      try { const p = video?.elt?.play?.(); if (p && p.then) p.catch(()=>{}); } catch(e){}
-      faceMesh?.detectStart?.(video, gotFaces);
-      isDetecting = true;
-      btn.html('⏸️ Mettre en pause');
-      statusEl.removeClass('warn fail').addClass('ok').html('Détection en cours');
-    } else {
-      faceMesh?.detectStop?.();
-      isDetecting = false;
-      btn.html('▶️ Démarrer la détection');
-      statusEl.removeClass('ok warn').addClass('fail').html('Détection en pause');
-    }
-  };
-  btn.mousePressed(start);
-
-  const boxLight = createDiv('').addClass('control').parent(ui);
-  const lblLight = createElement('label', 'Intensité de la lumière'); lblLight.parent(boxLight);
-  const slider = createSlider(50, 255, lightIntensity, 1); slider.parent(boxLight);
-  slider.input(() => (lightIntensity = slider.value()));
-
-  const boxDef = createDiv('').addClass('control').parent(ui);
-  const chkDef = createCheckbox('Déformation par expression', enableDeformation);
-  chkDef.parent(boxDef); chkDef.changed(() => (enableDeformation = chkDef.checked()));
-
-  const boxPts = createDiv('').addClass('control').parent(ui);
-  const chkPts = createCheckbox('Afficher les points clés', showKeypoints);
-  chkPts.parent(boxPts); chkPts.changed(() => (showKeypoints = chkPts.checked()));
-}
-
+// ==================== TRIANGULACIÓN ====================
 const TRIANGULATION = [
   127,34,139,11,0,37,232,231,120,72,37,39,128,121,47,232,121,128,104,69,67,
   175,171,148,157,154,155,118,50,101,73,39,40,9,151,108,48,115,131,194,204,211,
