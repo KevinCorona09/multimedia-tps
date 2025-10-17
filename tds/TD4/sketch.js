@@ -24,7 +24,7 @@ let cameraError = false;
 const options = {
   maxFaces: 1,
   refineLandmarks: true,
-  flipHorizontal: false // Cambiado a false para mejor alineación
+  flipHorizontal: false // false para mejor alineación
 };
 
 function setup() {
@@ -36,12 +36,12 @@ function setup() {
   frameRate(30);
   pixelDensity(1);
 
-  // Crear el video (autoplay y oculto en el DOM, lo dibujamos al canvas)
+  // Crear el video (autoplay y oculto en el DOM, lo usamos como textura)
   video = createCapture(VIDEO, videoReady);
   
   // Tamaño base del stream (usado como referencia para el mapeo de puntos)
   video.size(640, 480);
-  video.hide();
+  video.hide(); // Lo ocultamos del DOM porque lo dibujaremos como textura
 
   // Ajustes para mejor compatibilidad de autoplay en móviles
   video.elt.setAttribute("playsinline", "");
@@ -84,25 +84,34 @@ function gotFaces(results) {
 function draw() {
   background(26);
 
-  // --- VIDEO DE FONDO (espejado) ---
-  // Lo dibujamos como imagen plana detrás de la malla (z negativo) para que se vean ambos.
-  if (cameraReady && video && video.loadedmetadata) {
+  // --- VIDEO DE FONDO (como textura en un plano) ---
+  // Lo dibujamos como textura en 3D detrás de la malla
+  if (cameraReady && video && video.elt.readyState === video.elt.HAVE_ENOUGH_DATA) {
     push();
-    // En WEBGL, (0,0) es el centro. Espejamos en X para efecto espejo
-    scale(-1, 1, 1);
-    translate(0, 0, -200);
-    // Dibujar desde la esquina superior izquierda del canvas
-    imageMode(CENTER);
-    image(video, 0, 0, width, height);
+    translate(0, 0, -300); // Moverlo hacia atrás en el espacio 3D
+    texture(video);
+    noStroke();
+    
+    // Crear plano para el video con efecto espejo
+    push();
+    scale(-1, 1, 1); // Espejamos horizontalmente
+    beginShape();
+    textureMode(NORMAL);
+    vertex(-width/2, -height/2, 0, 0, 0);
+    vertex(width/2, -height/2, 0, 1, 0);
+    vertex(width/2, height/2, 0, 1, 1);
+    vertex(-width/2, height/2, 0, 0, 1);
+    endShape(CLOSE);
+    pop();
     pop();
   }
 
   // --- LUCES 3D ---
   // Luz ambiental suave + direccional rotante alrededor del rostro
-  ambientLight(80);
+  ambientLight(100);
   const lx = Math.cos(lightAngle) * 300;
   const lz = Math.sin(lightAngle) * 300;
-  directionalLight(255, 255, 255, lx, -120, lz);
+  directionalLight(200, 200, 200, lx, -100, lz);
   lightAngle += 0.02;
 
   // --- MALLA FACIAL ---
@@ -129,10 +138,12 @@ function drawFaceMesh(face) {
   const blink = isBlinking(pts);
 
   // Color base: si hay boca abierta, cálido; si parpadeo, dorado
-  let fillColor = mouthIsOpen ? [255, 120, 80] : [120, 200, 255];
-  if (blink) fillColor = [255, 220, 0];
+  // Agregamos transparencia (alpha) para ver el video de fondo
+  let fillColor = mouthIsOpen ? [255, 120, 80, 200] : [120, 200, 255, 200];
+  if (blink) fillColor = [255, 220, 0, 200];
 
   noStroke();
+  fill(fillColor[0], fillColor[1], fillColor[2], fillColor[3]);
   ambientMaterial(fillColor[0], fillColor[1], fillColor[2]);
 
   // Triangulación disponible (reutilizada cada frame)
@@ -195,9 +206,8 @@ function mapToCanvas3D(p) {
   // Ajustamos por el escalado del canvas respecto al video, para mantener proporciones.
   const sx = width / videoW;
   const sy = height / videoH;
-  const s = (sx + sy) * 0.5;
 
-  return { x: x * sx, y: y * sy, z: z * s };
+  return { x: x * sx, y: y * sy, z: z * sx };
 }
 
 function mouthCenter(pts) {
@@ -210,7 +220,8 @@ function deformNearMouth(vCanvas, pVideo, mouth, influence = 80, pushZ = 12) {
   const d = dist(pVideo.x, pVideo.y, mouth.x, mouth.y);
   if (d < influence) {
     const k = 1 - d / influence; // 0..1
-    return { x: vCanvas.x, y: vCanvas.y, z: vCanvas.z - k * pushZ };
+    // Cambiado: ahora sumamos pushZ para que sobresalga hacia adelante
+    return { x: vCanvas.x, y: vCanvas.y, z: vCanvas.z + k * pushZ };
   }
   return vCanvas;
 }
