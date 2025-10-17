@@ -1,97 +1,134 @@
 /* =========================================================================
    Escaneo Facial 3D Interactivo con ml5.js FaceMesh + p5.js (WEBGL)
-   Cumple especificaciones del PDF: detección de 468 puntos, malla triangular
-   3D, iluminación rotante, deformación por expresión (boca abierta),
-   controles interactivos y orbitControl para rotación orbital.
+   Ajustado para móviles: autoplay inline, mute, arranque por gesto de usuario,
+   canvas responsivo y sincronización de tamaños.
    ========================================================================= */
 
-// ------------------------ Variables globales (según especificación) ------------------------
 let faceMesh;                 // Modelo FaceMesh de ml5
 let video;                    // Flujo de cámara
 let faces = [];               // Resultados de detección
-let options = {               // Opciones sugeridas en el PDF
+let options = {
   maxFaces: 1,
   refineLandmarks: false,
   flipHorizontal: false
 };
 
 // Iluminación
-let lightIntensity = 220;     // Intensidad base (0-255)
-let rotationAngle = 0;        // Ángulo para rotación automática de la luz
+let lightIntensity = 220;
+let rotationAngle = 0;
 
 // Controles
-let isDetecting = true;       // Iniciar/pausar detección
-let showKeypoints = false;    // Mostrar/ocultar puntos clave
-let enableDeformation = true; // Activar/desactivar deformación por expresión
+let isDetecting = false;      // ⟵ En móvil es más seguro iniciar pausado
+let showKeypoints = false;
+let enableDeformation = true;
 
 // Referencias de UI
 let statusEl, errorEl;
 
-// ------------------------ Carga previa del modelo (según guía del PDF) ------------------------
+// ------------------------ Carga del modelo ------------------------
 function preload() {
-  // Cargar la instancia de FaceMesh con las opciones definidas
   faceMesh = ml5.faceMesh(options);
 }
 
-// ------------------------ Setup de p5: canvas WEBGL, cámara y FaceMesh ------------------------
+// ------------------------ Setup ------------------------
 function setup() {
-  // Crear canvas WEBGL (necesario para 3D)
-  const canvas = createCanvas(640, 480, WEBGL);
-  canvas.parent('canvas-container');
+  // Densidad 1 para evitar cargas en pantallas Retina
+  pixelDensity(1);
 
-  // Tasa mínima de refresco especificada: 30 FPS
+  // Canvas responsivo (4:3) limitado a 720px de ancho
+  const { w, h } = canvasSizeFromWindow();
+  const canvas = createCanvas(w, h, WEBGL);
+  canvas.parent('canvas-container');
   frameRate(30);
 
-  // Referencias de estado/errores
   statusEl = select('#status');
   errorEl = select('#error-msg');
 
-  // Inicializar captura de video (cámara)
-  video = createCapture(
-    {
-      video: {
-        width: { ideal: 640 },
-        height: { ideal: 480 },
-        facingMode: 'user'
-      },
-      audio: false
+  // Captura de vídeo con atributos obligatorios para móvil
+  video = createCapture({
+    video: {
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      facingMode: 'user'
     },
-    () => { /* Permisos concedidos */ }
-  );
-  video.size(640, 480);
+    audio: false
+  }, () => { /* permisos concedidos */ });
+
+  // Atributos HTML necesarios para iOS/Android
+  video.elt.setAttribute('playsinline', ''); // iOS Safari
+  video.elt.setAttribute('autoplay', '');    // intenta reproducir
+  video.elt.setAttribute('muted', '');       // autoplay sin gesto
+  video.elt.playsInline = true;
+  video.elt.muted = true;
+  video.elt.autoplay = true;
+
+  // Ocultar el elemento (renderizamos nuestra malla)
   video.hide();
 
-  // Mensaje si la cámara no está disponible
+  // Cuando el vídeo tenga metadatos, sincronizamos tamaños
+  video.elt.onloadedmetadata = () => {
+    // Igualar tamaño del video al del canvas (mejora la inferencia)
+    video.size(width, height);
+    // Intentamos reproducir por si el navegador lo pausó
+    const p = video.elt.play?.();
+    if (p && typeof p.then === 'function') p.catch(() => {/* ignorar */});
+
+    // Si el usuario ya activó la detección, arrancamos ahora
+    if (isDetecting) {
+      faceMesh.detectStart(video, gotFaces);
+      statusEl.removeClass('fail warn').addClass('ok').html('Caméra prête');
+    } else {
+      statusEl.removeClass('fail').addClass('warn').html('Caméra prête — appuyez sur “Démarrer la détection”.');
+    }
+  };
+
+  // Mensaje de error si no hay cámara tras unos segundos
   setTimeout(() => {
     if (!video.elt || !video.elt.srcObject) {
       errorEl.html('Impossible d’accéder à la caméra. Vérifiez les autorisations ou utilisez HTTPS/localhost.');
       statusEl.removeClass('ok').addClass('fail').html('Caméra indisponible');
     }
-  }, 5000);
+  }, 6000);
 
-  // Iniciar detección
-  faceMesh.detectStart(video, gotFaces);
-
-  // Crear controles
+  // Crear los controles
   createControls();
 }
 
+// ------------------------ Redimensionado responsivo ------------------------
+function windowResized() {
+  const { w, h } = canvasSizeFromWindow();
+  resizeCanvas(w, h);
+  // Mantener video sincronizado con el canvas
+  if (video) video.size(w, h);
+}
 
-// ------------------------ Bucle de dibujo ---------------------------------
+// Cálculo del tamaño del canvas en función del ancho de la ventana
+function canvasSizeFromWindow() {
+  const margin = 32;                 // margen lateral aproximado del layout
+  const maxW = 720;                  // tope superior
+  const w = Math.min(windowWidth - margin, maxW);
+  const h = Math.round(w * 0.75);    // relación 4:3
+  return { w: Math.max(280, w), h: Math.max(210, h) };
+}
+
+// ------------------------ Bucle de dibujo ------------------------
 function draw() {
-  // Fondo
   background(26);
 
-  // Rotación orbital con el mouse
+  // Rotación orbital (arrastre con dedo/mouse) y límites de zoom suaves
   orbitControl(2, 2, 0.1);
 
-  // Luces
   setupLighting();
 
-  // Invertimos Y para trabajar cómodo con landmarks
+  // Y hacia arriba para que los landmarks sean intuitivos
   scale(1, -1, 1);
 
-  // Estado
+  if (!isDetecting) {
+    // Si está pausado, mostramos estado y salimos
+    statusEl.removeClass('ok warn').addClass('fail').html('Détection en pause');
+    return;
+  }
+
   if (faces.length > 0) {
     drawFaceMesh();
     statusEl.removeClass('warn fail').addClass('ok').html('Visage détecté');
@@ -99,239 +136,134 @@ function draw() {
     statusEl.removeClass('ok fail').addClass('warn').html('Aucun visage détecté');
   }
 
-  // Rotación automática de la luz
   rotationAngle += 0.01;
 }
 
-
 // ------------------------ Callback de predicción ---------------------------
-function gotFaces(results) {
-  faces = results || [];
-}
+function gotFaces(results) { faces = results || []; }
 
-// ------------------------ Iluminación: ambiental + direccional rotante ----
+// ------------------------ Luces ------------------------
 function setupLighting() {
-  // Luz ambiental (suaviza sombras). Escalamos por ~30% de la intensidad.
   ambientLight(lightIntensity * 0.3);
-
-  // Luz direccional rotante alrededor del rostro.
-  // La dirección se calcula con cos/sin del ángulo actual.
-  // Usamos un vector unitario (x, y, z): y ligeramente negativo para simular luz superior.
-  const lx = cos(rotationAngle);
-  const lz = sin(rotationAngle);
-  const ly = -0.35;
-
+  const lx = cos(rotationAngle), lz = sin(rotationAngle), ly = -0.35;
   directionalLight(lightIntensity, lightIntensity, lightIntensity, lx, ly, lz);
 }
 
-// ------------------------ Dibujo de la malla facial 3D --------------------
+// ------------------------ Malla facial 3D ------------------------
 function drawFaceMesh() {
   const face = faces[0];
+  const raw = face?.keypoints || face?.scaledMesh || face?.landmarks || [];
+  if (!raw.length) return;
 
-  // Distintas versiones de ml5 pueden exponer landmarks con propiedades diferentes.
-  // Cubrimos varios casos comunes: keypoints (objetos), scaledMesh (arrays) o landmarks.
-  const raw = face.keypoints || face.scaledMesh || face.landmarks || [];
-  if (!raw || raw.length === 0) return;
-
-  // Convertimos todos los puntos a un formato unificado {x,y,z} en coordenadas centradas.
   const pts = raw.map(p => {
     let x, y, z;
-    if (Array.isArray(p)) {
-      [x, y, z] = p;
-    } else if (typeof p === 'object') {
-      // ml5/mediapipe suelen exponer x,y,z en píxeles (x,y) y z normalizada
-      x = p.x; y = p.y; z = p.z;
-    }
-    // Centrar en el canvas WEBGL (0,0,0 en el centro) y ajustar Z a profundidad útil
+    if (Array.isArray(p)) [x, y, z] = p; else { x = p.x; y = p.y; z = p.z; }
     const cx = x - (video.width / 2);
-    const cy = y - (video.height / 2); // Ojo: arriba positivo por scale(1,-1,1)
-    const zScale = 110;                 // Escala de profundidad (ajustada a un valor natural)
-    const cz = -(z || 0) * zScale;      // Convención: z negativa hacia la cámara
+    const cy = y - (video.height / 2);
+    const cz = -(z || 0) * 110;
     return { x: cx, y: cy, z: cz };
   });
 
-  // ------------------- Detección de expresión: apertura de boca -----------
-  const mouthOpenRatio = detectMouthOpen(pts); // ratio > ~0.06 => boca abierta
-  const isBlinking = detectBlink(pts);         // parpadeo opcional (valorado)
+  const mouthOpenRatio = detectMouthOpen(pts);
+  const isBlinking = detectBlink(pts);
+  const deformStrength = enableDeformation ? constrain(map(mouthOpenRatio, 0.05, 0.25, 0, 1), 0, 1) : 0;
 
-  // Factor de deformación (0..1) según apertura de boca
-  const deformStrength = enableDeformation
-    ? constrain(map(mouthOpenRatio, 0.05, 0.25, 0, 1), 0, 1)
-    : 0;
-
-  // Material de la malla: variamos ligeramente el color según expresión/parpadeo
   noStroke();
-  if (isBlinking) {
-    // Parpadeo: aplicar un leve brillo emissive para indicar evento
-    emissiveMaterial(70, 70, 70);
-  } else if (deformStrength > 0.01) {
-    // Boca abierta: tinte cálido
-    ambientMaterial(160 + 60 * deformStrength, 120, 120);
-  } else {
-    // Neutro
-    ambientMaterial(185);
-  }
+  if (isBlinking) emissiveMaterial(70, 70, 70);
+  else if (deformStrength > 0.01) ambientMaterial(160 + 60 * deformStrength, 120, 120);
+  else ambientMaterial(185);
 
-  // Triangulación: algunos builds de ml5 incluyen face.triangles; si no,
-  // usamos la constante TRIANGULATION (lista de triángulos estándar de FaceMesh).
   const tris = face.triangles || TRIANGULATION;
-  if (!tris || tris.length === 0) return;
+  if (!tris?.length) return;
 
-  // Dibujar la malla triangular (cada 3 índices = un triángulo)
   beginShape(TRIANGLES);
   for (let i = 0; i < tris.length; i += 3) {
-    const i0 = tris[i], i1 = tris[i + 1], i2 = tris[i + 2];
-    // Aplicar deformación por expresión (suave, dependiente de la distancia a la boca)
-    const v0 = applyDeformation(pts[i0], pts, deformStrength);
-    const v1 = applyDeformation(pts[i1], pts, deformStrength);
-    const v2 = applyDeformation(pts[i2], pts, deformStrength);
-
-    vertex(v0.x, v0.y, v0.z);
-    vertex(v1.x, v1.y, v1.z);
-    vertex(v2.x, v2.y, v2.z);
+    const v0 = applyDeformation(pts[tris[i]], pts, deformStrength);
+    const v1 = applyDeformation(pts[tris[i+1]], pts, deformStrength);
+    const v2 = applyDeformation(pts[tris[i+2]], pts, deformStrength);
+    vertex(v0.x, v0.y, v0.z); vertex(v1.x, v1.y, v1.z); vertex(v2.x, v2.y, v2.z);
   }
   endShape();
 
-  // Puntos clave (opcional)
   if (showKeypoints) {
-    stroke(0, 255, 255);
-    strokeWeight(3);
-    noFill();
-    for (let i = 0; i < pts.length; i++) {
-      const p = pts[i];
-      point(p.x, p.y, p.z);
-    }
+    stroke(0, 255, 255); strokeWeight(3); noFill();
+    for (const p of pts) point(p.x, p.y, p.z);
   }
 }
 
 // ------------------------ Deformación por expresión -----------------------
 function applyDeformation(p, pts, s) {
-  // Si no hay deformación, devolver punto tal cual
-  if (!s || s <= 0) return p;
-
-  // Centro aproximado de la boca: promedio de landmarks 13 (labio sup. interno)
-  // y 14 (labio inf. interno). Estos índices son estándar en FaceMesh.
+  if (!s) return p;
   const mouthCenter = {
-    x: (pts[13].x + pts[14].x) * 0.5,
-    y: (pts[13].y + pts[14].y) * 0.5,
-    z: (pts[13].z + pts[14].z) * 0.5
+    x: (pts[13].x + pts[14].x) * .5,
+    y: (pts[13].y + pts[14].y) * .5,
+    z: (pts[13].z + pts[14].z) * .5
   };
-
-  // Distancia al centro de la boca
-  const dx = p.x - mouthCenter.x;
-  const dy = p.y - mouthCenter.y;
-  const dz = p.z - mouthCenter.z;
-  const d2 = dx * dx + dy * dy + dz * dz;
-
-  // Radio de influencia (en px²). Ajustado para afectar labios, mentón cercano y mejillas inmediatas.
-  const radius2 = 70 * 70;
-
+  const dx = p.x - mouthCenter.x, dy = p.y - mouthCenter.y, dz = p.z - mouthCenter.z;
+  const d2 = dx*dx + dy*dy + dz*dz, radius2 = 70*70;
   if (d2 > radius2) return p;
-
-  // Peso (1 en el centro -> 0 en el borde del radio)
   const w = (1 - (d2 / radius2)) * s;
-
-  // Offset suave: empujar hacia fuera (z-) y un leve desplazamiento en y+
-  // para simular estiramiento cuando se abre la boca.
-  return {
-    x: p.x,
-    y: p.y + 10 * w,
-    z: p.z - 14 * w
-  };
+  return { x: p.x, y: p.y + 10*w, z: p.z - 14*w };
 }
 
-// ------------------------ Detección de apertura de boca -------------------
+// ------------------------ Detección de gestos -----------------------------
 function detectMouthOpen(pts) {
-  // Landmarks útiles (estándar FaceMesh):
-  // 13 = labio superior (interior), 14 = labio inferior (interior)
-  // 61 y 291 = comisuras izquierda y derecha de la boca (referencia de ancho)
   if (!pts[13] || !pts[14] || !pts[61] || !pts[291]) return 0;
-
-  const upper = pts[13];
-  const lower = pts[14];
-  const leftC = pts[61];
-  const rightC = pts[291];
-
-  const mouthOpen = dist3D(upper, lower);
-  const mouthWidth = dist3D(leftC, rightC);
-
-  // Ratio independiente de escala; típicamente > ~0.06 indica boca abierta
-  const ratio = mouthOpen / (mouthWidth || 1);
-  return ratio;
+  const mouthOpen = dist3D(pts[13], pts[14]), mouthWidth = dist3D(pts[61], pts[291]);
+  return mouthOpen / (mouthWidth || 1);
 }
-
-// ------------------------ Detección de parpadeo (opcional) ----------------
 function detectBlink(pts) {
-  // Ojos: pares verticales y horizontales comunes en FaceMesh
-  // Ojo izquierdo: vertical 159-145, horizontal 33-133
-  // Ojo derecho: 386-374, horizontal 362-263
-  const need = [159,145,33,133,386,374,362,263];
-  for (const i of need) if (!pts[i]) return false;
-
-  const leftV = dist3D(pts[159], pts[145]);
-  const leftH = dist3D(pts[33],  pts[133]);
-  const rightV = dist3D(pts[386], pts[374]);
-  const rightH = dist3D(pts[362], pts[263]);
-
-  // Eye Aspect Ratio simple (vertical/horizontal)
-  const lRatio = leftV / (leftH || 1);
-  const rRatio = rightV / (rightH || 1);
-
-  // Umbral empírico bajo (párpado casi cerrado)
-  const TH = 0.045;
-  return (lRatio < TH && rRatio < TH);
+  const need = [159,145,33,133,386,374,362,263]; for (const i of need) if (!pts[i]) return false;
+  const lRatio = dist3D(pts[159], pts[145]) / (dist3D(pts[33],  pts[133]) || 1);
+  const rRatio = dist3D(pts[386], pts[374]) / (dist3D(pts[362], pts[263]) || 1);
+  return (lRatio < 0.045 && rRatio < 0.045);
 }
-
-// ------------------------ Utilidad: distancia 3D --------------------------
-function dist3D(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  const dz = a.z - b.z;
-  return Math.sqrt(dx * dx + dy * dy + dz * dz);
-}
+function dist3D(a,b){ const dx=a.x-b.x, dy=a.y-b.y, dz=a.z-b.z; return Math.hypot(dx,dy,dz); }
 
 // ------------------------ Controles de UI (p5 DOM) ------------------------
 function createControls() {
   const ui = select('#controls');
 
-  // Botón iniciar/pausar
-  const btn = createButton('⏸️ Mettre en pause');
-  btn.addClass('control');
-  btn.parent(ui);
-  btn.mousePressed(() => {
-    if (isDetecting) {
+  // Botón iniciar/pausar — inicia por gesto del usuario (móvil friendly)
+  const btn = createButton('▶️ Démarrer la détection');
+  btn.addClass('control'); btn.parent(ui);
+  const start = () => {
+    if (!isDetecting) {
+      // Aseguramos reproducción de vídeo
+      const p = video?.elt?.play?.(); if (p && p.then) p.catch(()=>{});
+      faceMesh.detectStart(video, gotFaces);
+      isDetecting = true;
+      btn.html('⏸️ Mettre en pause');
+      statusEl.removeClass('warn fail').addClass('ok').html('Détection en cours');
+    } else {
       faceMesh.detectStop();
       isDetecting = false;
       btn.html('▶️ Démarrer la détection');
       statusEl.removeClass('ok warn').addClass('fail').html('Détection en pause');
-    } else {
-      faceMesh.detectStart(video, gotFaces);
-      isDetecting = true;
-      btn.html('⏸️ Mettre en pause');
     }
-  });
+  };
+  btn.mousePressed(start);
 
-  // Slider de intensidad de luz
+  // Slider de luz
   const boxLight = createDiv('').addClass('control').parent(ui);
-  const lblLight = createElement('label', 'Intensité de la lumière');
-  lblLight.parent(boxLight);
-  const slider = createSlider(50, 255, lightIntensity, 1);
-  slider.parent(boxLight);
+  const lblLight = createElement('label', 'Intensité de la lumière'); lblLight.parent(boxLight);
+  const slider = createSlider(50, 255, lightIntensity, 1); slider.parent(boxLight);
   slider.input(() => (lightIntensity = slider.value()));
 
-  // Checkbox: deformación por expresión
+  // Checkboxes
   const boxDef = createDiv('').addClass('control').parent(ui);
   const chkDef = createCheckbox('Déformation par expression', enableDeformation);
-  chkDef.parent(boxDef);
-  chkDef.changed(() => (enableDeformation = chkDef.checked()));
+  chkDef.parent(boxDef); chkDef.changed(() => (enableDeformation = chkDef.checked()));
 
-  // Checkbox: mostrar puntos clave
   const boxPts = createDiv('').addClass('control').parent(ui);
   const chkPts = createCheckbox('Afficher les points clés', showKeypoints);
-  chkPts.parent(boxPts);
-  chkPts.changed(() => (showKeypoints = chkPts.checked()));
-}
+  chkPts.parent(boxPts); chkPts.changed(() => (showKeypoints = chkPts.checked()));
 
+  // En iOS/Android, el primer toque a cualquier control sirve como gesto de usuario
+  // para permitir play() del vídeo; por eso también llamamos start() en el primer touch
+  // cuando aún no se ha iniciado.
+  window.addEventListener('touchstart', () => { if (!isDetecting) {/* no auto */} }, { once:true });
+}
 
 // ------------------------ Triangulación por defecto -----------------------
 /*
