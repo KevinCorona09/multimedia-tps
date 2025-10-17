@@ -1,35 +1,72 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Escaneo Facial 3D Interactivo</title>
-  
-  <!-- p5.js -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
-  
-  <!-- ml5.js (última versión con FaceMesh) -->
-  <script src="https://unpkg.com/ml5@1/dist/ml5.min.js"></script>
-  
-  <!-- Delaunator para triangulación -->
-  <script src="https://cdn.jsdelivr.net/npm/delaunator@5.0.0/delaunator.min.js"></script>
-  
-  <!-- Estilos -->
-  <link rel="stylesheet" href="style.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FaceMesh ml5 - Cámara + Imagen (2 paneles)</title>
+
+  <link rel="stylesheet" href="./styles.css" />
+
+  <!-- p5 para el panel de cámara -->
+  <script src="https://unpkg.com/p5@1.9.0/lib/p5.min.js"></script>
+  <!-- ml5 (FaceMesh) -->
+  <script src="https://unpkg.com/ml5@latest/dist/ml5.min.js"></script>
+  <!-- Triangulación de 468 puntos -->
+  <script src="https://cdn.jsdelivr.net/npm/face-landmarks-triangulation@0.0.5/dist/triangulation.min.js"></script>
 </head>
 <body>
-  <div class="container">
-    <h1>Escaneo Facial 3D Interactivo</h1>
-    <p class="subtitle">
-      Detección facial con ml5.js FaceMesh + Visualización 3D con p5.js
-    </p>
-    <div id="status" class="status">Inicializando...</div>
-    <div class="canvas-wrapper">
-      <div id="canvas-container"></div>
+  <header class="topbar">
+    <div class="brand">
+      <h1>FaceMesh - Cámara + Imagen</h1>
+      <p>Izquierda: cámara frontal (malla + eventos). Derecha: arrastra o sube una foto (malla 2D).</p>
     </div>
-  </div>
-  
-  <!-- Script principal -->
-  <script src="sketch.js"></script>
+    <div class="tips">
+      <small>Para la cámara usa un servidor local/HTTPS. La imagen funciona con drag&drop o selector.</small>
+    </div>
+  </header>
+
+  <main class="split">
+    <!-- Panel Cámara -->
+    <section class="panel" id="cam-panel">
+      <div class="panel-head">
+        <h2>📷 Cámara</h2>
+        <span class="chip" id="cam-status">Inicializando...</span>
+      </div>
+      <div class="canvas-wrap">
+        <div id="cam-container"></div>
+      </div>
+      <p class="hint">Abre la boca para cambiar el color de la malla. Parpadea para un efecto de colores.</p>
+    </section>
+
+    <!-- Panel Imagen -->
+    <section class="panel" id="img-panel">
+      <div class="panel-head">
+        <h2>🖼️ Imagen (arrastra o sube)</h2>
+        <span class="chip" id="img-status">Arrastra una foto o elige un archivo.</span>
+      </div>
+
+      <div class="canvas-wrap" id="img-wrap">
+        <canvas id="img-canvas"></canvas>
+
+        <!-- Zona de arrastre / carga -->
+        <div id="dropzone" class="dropzone">
+          <div class="dz-inner">
+            <p><strong>Arrastra</strong> una foto aquí (o desde otra pestaña)</p>
+            <p>o</p>
+            <button id="pick-btn" type="button">Elegir imagen</button>
+            <input id="file-input" type="file" accept="image/*" hidden />
+          </div>
+        </div>
+      </div>
+
+      <p class="hint">Admite JPG/PNG/WebP locales y URLs arrastradas. Resalta ojos, boca y nariz.</p>
+    </section>
+  </main>
+
+  <footer class="credits">
+    <span>ml5.js FaceMesh (468 puntos) • p5.js • Canvas 2D • Triangulación</span>
+  </footer>
+
+  <script src="./app.js"></script>
 </body>
 </html>
