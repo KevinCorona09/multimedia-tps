@@ -1,38 +1,30 @@
 /* =========================================================================
-   Escaneo Facial 3D Interactivo con ml5.js FaceMesh + p5.js (WEBGL)
-   Correcciones:
-   - Se dibuja el VIDEO como textura de fondo (plano) y en espejo.
-   - El tamaño del canvas se calcula con el ancho REAL del contenedor.
-   - flipHorizontal activado para alinear landmarks con la cámara frontal.
+   Scan facial 3D (ml5 FaceMesh + p5 WEBGL)
+   Fixes:
+   - El vídeo se dibuja con image() (no textura), así evita problemas con luces.
+   - Espejado con scale(-1,1).
+   - z-index del canvas por encima de ::after (ver CSS).
+   - Reintento de play() en primer click/toque.
    ========================================================================= */
 
-let faceMesh;                 // Modelo FaceMesh de ml5
-let video;                    // Flujo de cámara
-let faces = [];               // Resultados de detección
+let faceMesh;
+let video;
+let faces = [];
 let options = {
   maxFaces: 1,
   refineLandmarks: false,
-  flipHorizontal: true       // ✅ espejo para cámara frontal
+  flipHorizontal: true
 };
 
-// Iluminación
 let lightIntensity = 220;
 let rotationAngle = 0;
 
-// Controles
-let isDetecting = false;      // Arranque pausado hasta gesto del usuario
+let isDetecting = false;
 let showKeypoints = false;
 let enableDeformation = true;
 
-// Referencias de UI
 let statusEl, errorEl;
 
-// ------------------------ Carga del modelo ------------------------
-function preload() {
-  faceMesh = ml5.faceMesh(options);
-}
-
-// ------------------------ Setup ------------------------
 function setup() {
   pixelDensity(1);
 
@@ -44,7 +36,7 @@ function setup() {
   statusEl = select('#status');
   errorEl = select('#error-msg');
 
-  // Captura de vídeo con atributos para móvil
+  // Cámara
   video = createCapture({
     video: {
       width: { ideal: 1280 },
@@ -53,31 +45,32 @@ function setup() {
     },
     audio: false
   });
-
-  // Atributos HTML necesarios para iOS/Android
   video.elt.setAttribute('playsinline', '');
   video.elt.setAttribute('autoplay', '');
   video.elt.setAttribute('muted', '');
   video.elt.playsInline = true;
   video.elt.muted = true;
   video.elt.autoplay = true;
-
-  // Ocultamos el <video> nativo; lo dibujamos como textura en el canvas
   video.hide();
 
-  // Cuando el vídeo tenga metadatos, sincronizamos tamaños
+  // Intenta reproducir al tener metadatos
   video.elt.onloadedmetadata = () => {
-    video.size(width, height);                 // ✅ igualar a canvas
-    const p = video.elt.play?.();
-    if (p && typeof p.then === 'function') p.catch(() => {/* ignorar */});
-
-    if (isDetecting) {
-      faceMesh.detectStart(video, gotFaces);
-      statusEl.removeClass('fail warn').addClass('ok').html('Caméra prête');
-    } else {
-      statusEl.removeClass('fail').addClass('warn').html('Caméra prête — appuyez sur “Démarrer la détection”.');
-    }
+    video.size(width, height);
+    try { const p = video.elt.play(); if (p && p.catch) p.catch(()=>{}); } catch(e){}
+    statusEl.removeClass('fail warn').addClass('ok').html('Caméra prête');
+    // Carga el modelo y empieza si el usuario lo activa
+    faceMesh = ml5.faceMesh(options);
   };
+
+  // Gesto del usuario: fuerza play() en navegadores estrictos
+  const resumeVideo = () => {
+    if (!video || !video.elt) return;
+    try { const p = video.elt.play(); if (p && p.catch) p.catch(()=>{}); } catch(e){}
+    window.removeEventListener('click', resumeVideo);
+    window.removeEventListener('touchend', resumeVideo);
+  };
+  window.addEventListener('click', resumeVideo, { passive: true });
+  window.addEventListener('touchend', resumeVideo, { passive: true });
 
   // Mensaje de error si no hay cámara
   setTimeout(() => {
@@ -90,45 +83,40 @@ function setup() {
   createControls();
 }
 
-// ------------------------ Redimensionado responsivo ------------------------
 function windowResized() {
   const { w, h } = canvasSizeFromContainer();
   resizeCanvas(w, h);
-  if (video) video.size(w, h);                // ✅ mantener sincronía
+  if (video) video.size(w, h);
 }
 
-// Cálculo del tamaño del canvas en función del ancho del CONTENEDOR
 function canvasSizeFromContainer() {
   const el = document.getElementById('canvas-container');
   const maxW = 720;
   const baseW = el?.clientWidth ? Math.min(el.clientWidth, maxW) : Math.min(windowWidth - 32, maxW);
   const w = Math.max(280, baseW);
-  const h = Math.max(210, Math.round(w * 0.75));  // relación 4:3
+  const h = Math.max(210, Math.round(w * 0.75));
   return { w, h };
 }
 
-// ------------------------ Bucle de dibujo ------------------------
 function draw() {
   background(26);
 
-  // Controles de cámara 3D
-  orbitControl(2, 2, 0.1);
-  setupLighting();
-
-  // 1) DIBUJAR EL VÍDEO como fondo (en espejo horizontal)
-  if (video && video.width && video.height) {
+  // --- 1) VIDEO DE FONDO (2D en WEBGL) ---
+  if (video && video.elt && video.elt.readyState >= 2) {
     push();
     noStroke();
-    // Plano al fondo; espejo horizontal con scale(-1,1,1)
-    // (Ojo: aquí NO invertimos el eje Y)
-    translate(0, 0, -400);
+    // Espejo horizontal
     scale(-1, 1, 1);
-    texture(video);
-    plane(width, height);
+    // En WEBGL el (0,0) está en el centro
+    image(video, -width/2, -height/2, width, height);
     pop();
   }
 
-  // 2) DIBUJAR LA MALLA (invertimos Y para que los landmarks sean intuitivos)
+  // --- 2) MALLA 3D ---
+  // Luces y control orbital no afectan a la imagen 2D de arriba
+  orbitControl(2, 2, 0.1);
+  setupLighting();
+
   push();
   scale(1, -1, 1);
 
@@ -149,17 +137,14 @@ function draw() {
   rotationAngle += 0.01;
 }
 
-// ------------------------ Callback de predicción ---------------------------
-function gotFaces(results) { faces = results || []; }
-
-// ------------------------ Luces ------------------------
 function setupLighting() {
   ambientLight(lightIntensity * 0.3);
   const lx = cos(rotationAngle), lz = sin(rotationAngle), ly = -0.35;
   directionalLight(lightIntensity, lightIntensity, lightIntensity, lx, ly, lz);
 }
 
-// ------------------------ Malla facial 3D ------------------------
+function gotFaces(results) { faces = results || []; }
+
 function drawFaceMesh() {
   const face = faces[0];
   const raw = face?.keypoints || face?.scaledMesh || face?.landmarks || [];
@@ -201,7 +186,6 @@ function drawFaceMesh() {
   }
 }
 
-// ------------------------ Deformación por expresión -----------------------
 function applyDeformation(p, pts, s) {
   if (!s) return p;
   const mouthCenter = {
@@ -216,7 +200,6 @@ function applyDeformation(p, pts, s) {
   return { x: p.x, y: p.y + 10*w, z: p.z - 14*w };
 }
 
-// ------------------------ Detección de gestos -----------------------------
 function detectMouthOpen(pts) {
   if (!pts[13] || !pts[14] || !pts[61] || !pts[291]) return 0;
   const mouthOpen = dist3D(pts[13], pts[14]), mouthWidth = dist3D(pts[61], pts[291]);
@@ -230,22 +213,20 @@ function detectBlink(pts) {
 }
 function dist3D(a,b){ const dx=a.x-b.x, dy=a.y-b.y, dz=a.z-b.z; return Math.hypot(dx,dy,dz); }
 
-// ------------------------ Controles de UI (p5 DOM) ------------------------
 function createControls() {
   const ui = select('#controls');
 
-  // Botón iniciar/pausar — inicia por gesto del usuario (móvil friendly)
   const btn = createButton('▶️ Démarrer la détection');
   btn.addClass('control'); btn.parent(ui);
   const start = () => {
     if (!isDetecting) {
-      const p = video?.elt?.play?.(); if (p && p.then) p.catch(()=>{});
-      faceMesh.detectStart(video, gotFaces);
+      try { const p = video?.elt?.play?.(); if (p && p.then) p.catch(()=>{}); } catch(e){}
+      faceMesh?.detectStart?.(video, gotFaces);
       isDetecting = true;
       btn.html('⏸️ Mettre en pause');
       statusEl.removeClass('warn fail').addClass('ok').html('Détection en cours');
     } else {
-      faceMesh.detectStop();
+      faceMesh?.detectStop?.();
       isDetecting = false;
       btn.html('▶️ Démarrer la détection');
       statusEl.removeClass('ok warn').addClass('fail').html('Détection en pause');
@@ -253,13 +234,11 @@ function createControls() {
   };
   btn.mousePressed(start);
 
-  // Slider de luz
   const boxLight = createDiv('').addClass('control').parent(ui);
   const lblLight = createElement('label', 'Intensité de la lumière'); lblLight.parent(boxLight);
   const slider = createSlider(50, 255, lightIntensity, 1); slider.parent(boxLight);
   slider.input(() => (lightIntensity = slider.value()));
 
-  // Checkboxes
   const boxDef = createDiv('').addClass('control').parent(ui);
   const chkDef = createCheckbox('Déformation par expression', enableDeformation);
   chkDef.parent(boxDef); chkDef.changed(() => (enableDeformation = chkDef.checked()));
@@ -267,26 +246,21 @@ function createControls() {
   const boxPts = createDiv('').addClass('control').parent(ui);
   const chkPts = createCheckbox('Afficher les points clés', showKeypoints);
   chkPts.parent(boxPts); chkPts.changed(() => (showKeypoints = chkPts.checked()));
-
-  // Primer toque sirve como gesto de usuario para permitir play() del vídeo
-  window.addEventListener('touchstart', () => { /* noop */ }, { once:true });
 }
 
-// ------------------------ Triangulación por defecto -----------------------
 const TRIANGULATION = [
-  127,34,139, 11,0,37, 232,231,120, 72,37,39, 128,121,47, 232,121,128, 104,69,67,
-  175,171,148, 157,154,155, 118,50,101, 73,39,40, 9,151,108, 48,115,131, 194,204,211,
-  74,40,185, 80,42,183, 40,92,186, 230,229,118, 202,212,214, 83,18,17, 76,61,146,
-  160,29,30, 56,157,173, 106,204,194, 135,214,192, 203,165,98, 21,71,68, 51,45,4,
-  5,4,275, 440,275,4, 363,343,412, 386,258,387, 258,445,387, 265,353,342, 387,259,386,
-  260,386,259, 257,386,260, 249,390,373, 463,341,464, 453,357,465, 289,251,375, 308,324,318,
-  291,375,251, 285,417,335, 405,314,313, 17,16,8, 264,356,454, 356,264,19, 236,353,265,
-  454,356,461, 359,255,339, 254,448,261, 370,345,372, 423,358,327, 327,358,326, 320,321,405,
-  280,267,311, 309,438,291, 305,290,392, 290,305,460, 300,276,383, 292,308,324, 290,460,328,
-  376,433,435, 250,290,328, 385,258,259, 257,259,258, 386,257,385, 443,444,282, 285,336,417,
-  406,418,419, 426,436,423, 429,420,421, 360,363,440, 437,399,456, 420,437,456, 363,360,279,
-  278,279,360, 333,332,297, 175,152,377, 365,397,367, 440,437,438, 297,338,337, 335,273,321,
-  348,330,329, 293,298,333, 252,272,271, 322,320,406, 271,311,268, 313,314,17, 287,291,423,
-  406,422,322, 374,386,380, 285,295,336, 265,372,353
-  /* (lista reducida para fallback; si ml5 provee face.triangles se usa aquello) */
+  127,34,139,11,0,37,232,231,120,72,37,39,128,121,47,232,121,128,104,69,67,
+  175,171,148,157,154,155,118,50,101,73,39,40,9,151,108,48,115,131,194,204,211,
+  74,40,185,80,42,183,40,92,186,230,229,118,202,212,214,83,18,17,76,61,146,
+  160,29,30,56,157,173,106,204,194,135,214,192,203,165,98,21,71,68,51,45,4,
+  5,4,275,440,275,4,363,343,412,386,258,387,258,445,387,265,353,342,387,259,386,
+  260,386,259,257,386,260,249,390,373,463,341,464,453,357,465,289,251,375,308,324,318,
+  291,375,251,285,417,335,405,314,313,17,16,8,264,356,454,356,264,19,236,353,265,
+  454,356,461,359,255,339,254,448,261,370,345,372,423,358,327,327,358,326,320,321,405,
+  280,267,311,309,438,291,305,290,392,290,305,460,300,276,383,292,308,324,290,460,328,
+  376,433,435,250,290,328,385,258,259,257,259,258,386,257,385,443,444,282,285,336,417,
+  406,418,419,426,436,423,429,420,421,360,363,440,437,399,456,420,437,456,363,360,279,
+  278,279,360,333,332,297,175,152,377,365,397,367,440,437,438,297,338,337,335,273,321,
+  348,330,329,293,298,333,252,272,271,322,320,406,271,311,268,313,314,17,287,291,423,
+  406,422,322,374,386,380,285,295,336,265,372,353
 ];
