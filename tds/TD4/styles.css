@@ -75,8 +75,22 @@ h1 .thin{ font-weight: 800; color: #d6dcff; }
 }
 
 /* Canvas con borde reactivo */
-#canvas-container{ display: grid; place-items: center; min-height: 60vh; overflow: hidden; }
-.canvas-card{ position: relative; isolation: isolate; }
+#canvas-container{ 
+  display: grid; 
+  place-items: center; 
+  min-height: 60vh;
+  padding: 20px;          /* ✅ Agregado */
+  overflow: visible;       /* ✅ Cambiado de hidden */
+}
+.canvas-card{ 
+  position: relative; 
+  isolation: isolate;
+  width: 100%;            /* ✅ Agregado */
+  max-width: 720px;       /* ✅ Agregado */
+  display: flex;          /* ✅ Agregado */
+  justify-content: center;
+  align-items: center;
+}
 .canvas-card::before{
   content:""; position: absolute; inset: -1px; border-radius: calc(var(--radius) + 1px);
   background: conic-gradient(from 0deg, var(--accent), var(--accent-2), var(--accent));
@@ -157,4 +171,12 @@ button, input, label{ outline-offset: 3px; }
 @media (max-width: 720px){
   #app{ padding-bottom: 40px; }
   input[type="range"]{ width: 200px; }
+  #canvas-container { padding: 15px; }  /* ✅ Agregado */
+}
+
+.canvas-card canvas {     /* ✅ Nueva regla */
+  display: block !important;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
 }
