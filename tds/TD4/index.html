@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <!-- Metadatos (comentarios en español como pediste) -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Scan Facial 3D Interactif</title>
+
+  <!-- Librerías: p5.js y ml5.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <script src="https://unpkg.com/ml5@1/dist/ml5.min.js"></script>
+
+  <!-- Fuente limpia -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+
+  <!-- Estilos del proyecto (asegúrate de que el nombre coincida) -->
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Encabezado principal “glass” con efecto aurora -->
+    <header class="header panel">
+      <h1>
+        <span class="brand">Scan Facial</span>
+        <span class="thin">3D</span> avec FaceMesh
+      </h1>
+      <p class="subtitle">ml5.js + p5.js (WEBGL) • 468 points • Éclairage rotatif • Interaction</p>
+    </header>
+
+    <!-- Contenedor para el lienzo WEBGL (lo inyecta p5.js) -->
+    <div id="canvas-container" class="panel canvas-card"></div>
+
+    <!-- Controles (se crean desde sketch.js) -->
+    <div id="controls" class="panel controls" aria-label="Contrôles"></div>
+
+    <!-- Estado y errores (se actualizan desde sketch.js) -->
+    <div id="status" class="status">Initialisation…</div>
+    <div id="error-msg" class="error" role="alert" aria-live="polite"></div>
+
+    <!-- Nota de permisos -->
+    <p class="note">
+      Si le navigateur demande des autorisations, veuillez accepter l’accès à la caméra pour que la détection fonctionne.
+    </p>
+  </div>
+
+  <!-- Lógica principal (no necesita cambios para el nuevo estilo) -->
+  <script src="sketch.js"></script>
+</body>
+</html>

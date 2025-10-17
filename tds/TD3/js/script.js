@@ -27,7 +27,6 @@ let baseRotationY = 0;
 let coordinateMapping = new Map();
 let countryPositions = [];
 
-// 🆕 utilidades temporales para evitar GC en el loop
 const __tmpVecA = new THREE.Vector3();
 const __tmpVecB = new THREE.Vector3();
 const __tmpQuatA = new THREE.Quaternion();
@@ -613,21 +612,13 @@ function updateGeometryButtonText() {
     }
 }
 
-/* ============================
-   🆕 Helpers de orientación billboard robusta
-   ============================ */
-
-// Convierte un lookAt en *mundo* a un quaternion local del objeto
 function getLocalLookAtQuaternion(obj, targetWorld, up = __up) {
-    // Posición del objeto en mundo
     obj.getWorldPosition(__tmpVecA);
-    // Matriz "lookAt" en mundo: obj mira a target
     const m = new THREE.Matrix4().lookAt(__tmpVecA, targetWorld, up);
     const qWorld = __tmpQuatA.setFromRotationMatrix(m);
-    // Pasar de mundo a local: qLocal = inverse(parentWorld) * qWorld
     const parent = obj.parent || scene;
     parent.getWorldQuaternion(__tmpQuatB);
-    __tmpQuatB.invert();        // inverse(parentWorld)
+    __tmpQuatB.invert();        
     return __tmpQuatB.multiply(qWorld);
 }
 
@@ -654,9 +645,7 @@ function orientMarkerRadial(obj, immediate = false) {
     }
 }
 
-/* ============================
-   🆕 Reset correcto al cambiar de modo
-   ============================ */
+
 
 function forceResetBillboardOrientation() {
     earthGroup.children.forEach(child => {
@@ -781,7 +770,6 @@ async function fetchCountries() {
         setTimeout(() => {
             createCoordinateMapping();
             createLeafletCountryMarkers();
-            // 🆕 asegurar orientación inicial tras creación batch
             forceResetBillboardOrientation();
         }, 1000);
     } catch (error) {
@@ -811,7 +799,6 @@ function regenerateCountryMarkers() {
     setTimeout(() => {
         createCoordinateMapping();
         createLeafletCountryMarkers();
-        // 🆕 reorientar todo inmediatamente tras regenerar
         forceResetBillboardOrientation();
     }, 1000);
 }
@@ -873,7 +860,6 @@ function createCountrySpheresWithAdaptiveSize() {
                 const countrySphere = createBillboardFlagSphere(position, flagTexture, sphereRadius, country);
                 countryMarkers.push(countrySphere);
                 earthGroup.add(countrySphere);
-                // 🆕 orientación inicial inmediata al añadir
                 if (isBillboardActive) {
                     orientMarkerTowardsCamera(countrySphere, true);
                 } else {
@@ -985,10 +971,6 @@ function createFallbackCountries() {
     });
     console.log('Países de fallback creados');
 }
-
-/* ============================
-   🆕 Update de billboards robusto (espacio correcto)
-   ============================ */
 
 function updateBillboards() {
     earthGroup.children.forEach(child => {
